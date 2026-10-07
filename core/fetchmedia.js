@@ -32,6 +32,26 @@ function extOf(url = '') {
 
 const AUDIO_EXT = new Set(['mp3', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'wav', 'flac', 'mpeg', 'mpg', 'amr', 'weba']);
 const VIDEO_EXT = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'avi', '3gp']);
+const IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg', 'ico']);
+
+export function detectKindFromBuffer(buf) {
+  if (!buf || buf.length < 4) return null;
+  // PNG: 89 50 4E 47
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image';
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image';
+  // GIF: GIF8
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image';
+  // WebP: RIFF....WEBP
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image';
+  // MP4: ....ftyp
+  if (buf.length >= 8 && buf.toString('ascii', 4, 8) === 'ftyp') return 'video';
+  // OGG: OggS
+  if (buf.toString('ascii', 0, 4) === 'OggS') return 'audio';
+  // MP3: ID3 or sync frame
+  if (buf.toString('ascii', 0, 3) === 'ID3' || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0)) return 'audio';
+  return null;
+}
 
 /**
  * تصنيف الملف — بالامتداد الأول، لأن الـ content-type بيغلط كتير:
@@ -44,6 +64,7 @@ function kindOf(type = '', url = '') {
 
   if (ext && AUDIO_EXT.has(ext)) return 'audio';
   if (ext && VIDEO_EXT.has(ext)) return 'video';
+  if (ext && IMAGE_EXT.has(ext)) return 'image';
 
   if (/^audio\//i.test(t)) return 'audio';
   if (/^video\//i.test(t)) return 'video';
@@ -113,7 +134,12 @@ export async function fetchMedia(url, { expect = null, headers = {}, timeout = 4
       throw new Error('الرابط رجّع صفحة ويب مش ملف (كابشن أو حماية)');
     }
 
-    const kind = kindOf(type, current);
+    let kind = kindOf(type, current) || detectKindFromBuffer(buf);
+    if (!kind && expect) {
+      if (/octet-stream|binary/i.test(type)) {
+        kind = expect;
+      }
+    }
     if (!kind) {
       throw new Error(`نوع ملف غير متوقع: ${type || 'مجهول'}`);
     }
