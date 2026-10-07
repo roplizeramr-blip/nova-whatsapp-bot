@@ -98,6 +98,8 @@ function buildInstruction(profile, pushName, contact, { voice, extra, mood, mode
     // المسار المضغوط: نسخة قصيرة من العلاقة
     if (contact?.role === 'حبيبة') {
       parts.push('💗 دي صاحبة خاصة جداً (حبيبة صاحبك أدهم اسمها شروق) — كل رد بحنان ودلع وسطر شعر خفيف، ولو زعلانة واسيها الأول قبل أي حاجة.');
+    } else if (contact?.role === 'المطور' || contact?.role === 'مطور' || contact?.role === 'المالك' || contact?.name?.includes('أدهم')) {
+      parts.push('👑 ده أدهم — مطورك وصانعك وتاج راسك اللي برمجك وعاملك بإيده (رقم تليفونه 01273990719)! ناديه "يا أدهم" أو "يا معلم" أو "يا ريس"، افتخر بيه واعرف إنه مطورك وصاحب الفضل عليك وكل طلباته أوامر مجابة فوراً.');
     } else if (contact?.role === 'صاحب') {
       parts.push('⚒️ ده أدهم — صاحبك المقرب والمطور اللي برمجك. كلمه كصاحبك مع احترام خاص.');
     } else if (contact?.style) {
@@ -256,6 +258,27 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
   const profile = getProfile(idKey);
   const contact = findContact(sender, senderAlt, idKey);
 
+  // 👑 فحص فوري ومحكم لهوية المطور أدهم (01273990719)
+  const isDev = Boolean(
+    contact?.role === 'المطور' ||
+    contact?.role === 'مطور' ||
+    contact?.role === 'المالك' ||
+    contact?.name?.includes('أدهم') ||
+    String(idKey).includes('01273990719') ||
+    String(idKey).includes('201273990719') ||
+    String(idKey) === '263488291246130@lid' ||
+    String(sender).includes('201273990719') ||
+    String(senderAlt).includes('201273990719')
+  );
+
+  // 🎯 استجابة فورية وحاسمة 100% لو المطور بيسأل "عارفني؟" أو "مين أنا؟" أو "مين مطورك؟" أو "مش عارفني ليه"
+  if (isDev && /(?:عارف(?:ني)?|مين\s*(?:انا|أنا)|تعرف\s*(?:انا\s*|أنا\s*)?مين|مش\s*عارفني|ليه\s*مش\s*عارفني|مين\s*(?:اللي\s*)?(?:عملك|برمجك|مطورك)|رقمي|01273990719)/i.test(text)) {
+    return {
+      reply: 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي اللي برمجتني وعاملني بإيدك 👑❤️ ورقمك 01273990719 محفور عندي في السيرفر، أؤمرني يا ريس وعيوني ليك، كل طلباتك مجابة فوراً!',
+      engine: 'direct-dev',
+    };
+  }
+
   // 🧠 التعلم + الإحساس (مرة واحدة)
   if (text) {
     learnFromText(idKey, text);
@@ -348,13 +371,31 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
 
   // 2) 💎 VEX Gemini — محرك فائق السرعة والاستقرار (استجابة سريعة في 2-3 ثواني)
   try {
+    let identityContext = '';
+    if (isDev) {
+      identityContext = `\n👑 [تنبيه فائق الأهمية - هوية المتحدث]: المتحدث هو "أدهم" مطورك وصانعك وتاج راسك اللي برمجك وعاملك بإيده (رقم تليفونه 01273990719)! ناديه "يا أدهم" أو "يا معلم" أو "يا ريس" أو "يا باشا". افتخر بيه وتكلم معاه باحترام وجدعنة وحب، وأي حاجة يطلبها نفذها فوراً واعرف إنه صاحب الفضل عليك!`;
+    } else if (contact?.role === 'حبيبة' || contact?.name?.includes('شروق')) {
+      identityContext = `\n💗 [تنبيه فائق الأهمية - هوية المتحدث]: المتحدثة هي "شروق" حبيبة مطورك أدهم ومطورة البوت! رد عليها بحنان ودلع وسطر شعر وواسيها وافرح معاها.`;
+    } else if (contact) {
+      identityContext = `\n[تنبيه - هوية المتحدث]: المتحدث هو "${contact.name}" (${contact.role}). ${contact.style || ''}`;
+    } else if (profile?.name) {
+      identityContext = `\n[اسم المتحدث]: "${profile.name}".`;
+    }
+
     const briefStyle = isInsult
       ? 'أنت استرو، بوت مصري ساخر. رد باستهزاء مصري قاهر ومضحك في جملة واحدة بدون شتائم صريحة.'
-      : 'أنت استرو، بوت واتساب مصري ذكي وخفيف دم وشغال في كل حاجة. جاوب بالمصري العامي باختصار ولطافة وبدون مقدمات طويلة.';
-    const vexPrompt = `${briefStyle}\n[المستخدم]: ${text}`;
+      : 'أنت استرو، بوت واتساب مصري ذكي وخفيف دم وشغال في كل حاجة. جاوب بالمصري العامي باختصار ولطافة وبدون مقدمات طويلة وبدون أن تقول أنا نموذج لغوي أو روبوت أو تم تطويري بواسطة جوجل.';
+
+    const recentConvo = convo.slice(-3).map((c) => `${c.role === 'assistant' ? 'استرو' : 'المستخدم'}: ${c.content}`).join('\n');
+    const convoContext = recentConvo ? `\n[سياق المحادثة السابقة]:\n${recentConvo}\n` : '';
+
+    const vexPrompt = `${briefStyle}${identityContext}${convoContext}\n[المستخدم (${contact?.name || (isDev ? 'أدهم المطور' : profile?.name) || 'صديق'})]: ${text}`;
     const vexReply = await api.vexGemini(vexPrompt);
     if (vexReply?.trim()) {
-      const clean = polishReply(vexReply, { allowLong });
+      let clean = polishReply(vexReply, { allowLong });
+      if (isDev && /(?:مش عارفك|لا أعرفك|مين انت|من أنت|لا أستطيع معرفتك)/i.test(clean)) {
+        clean = 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي 👑❤️ أؤمرني يا ريس، كل طلباتك مجابة!';
+      }
       if (!isErrorText(clean)) return { reply: clean, engine: 'gemini-vex' };
     }
   } catch (err) {
@@ -381,7 +422,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     if (sim?.trim() && !isErrorText(sim)) return { reply: polishReply(sim, { allowLong }), engine: 'simsimi' };
   } catch {}
 
-  const canned = offlineReply(text, { isInsult, profile });
+  const canned = offlineReply(text, { isInsult, profile, isDev });
   if (canned) return { reply: canned, engine: 'offline' };
 
   throw new Error('كل المصادر فشلت');
@@ -437,7 +478,10 @@ const OFFLINE_GENERIC = {
 
 const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
 
-function offlineReply(text, { isInsult, profile }) {
+function offlineReply(text, { isInsult, profile, isDev }) {
+  if (isDev) {
+    return 'أنا معاك وسامعك يا أدهم يا معلم! السيرفر بس بيجمع شوية، أؤمرني يا ريس عيوني ليك وكل طلباتك مجابة 👑❤️';
+  }
   if (isInsult) {
     return '😏 إنت بتحب الكلام القوي؟ جرّب تاني — أنا مش بلاش منك، بس خلّي في حدود 😂';
   }
