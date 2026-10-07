@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { restoreKvFromDb, saveAllKvToDb } from './postgres.js';
+import { restoreKvFromDb, saveAllKvToDb, saveKeyToDb, deleteKeyFromDb } from './postgres.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -87,7 +87,30 @@ class DB {
 
   set(key, value) {
     this.data[key] = value;
+    saveKeyToDb(key, value).catch(() => {});
     this.save();
+  }
+
+  delete(key) {
+    if (key in this.data) {
+      delete this.data[key];
+      deleteKeyFromDb(key).catch(() => {});
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  has(key) {
+    return key in this.data;
+  }
+
+  all() {
+    return { ...this.data };
+  }
+
+  keys() {
+    return Object.keys(this.data);
   }
 
   // حفظ مؤجل: آخر set في 250ms هو اللي بيكتب فعلاً

@@ -326,3 +326,76 @@ export async function saveAllKvToDb(dataObj) {
     console.warn('⚠️ فشل حفظ KV في PostgreSQL:', err.message?.slice(0, 100));
   }
 }
+
+/**
+ * حفظ مفتاح محدد وبياناته في PostgreSQL مباشرة (Atomic Upsert)
+ */
+export async function saveKeyToDb(key, value) {
+  if (!isDbConfigured() || !key) return false;
+  try {
+    const ready = await initDatabase();
+    if (!ready || !pool) return false;
+    await pool.query(
+      `INSERT INTO bot_kv (key, value, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [key, JSON.stringify(value)]
+    );
+    return true;
+  } catch (err) {
+    console.warn(`⚠️ فشل حفظ المفتاح ${key} في PostgreSQL:`, err.message?.slice(0, 80));
+    return false;
+  }
+}
+
+/**
+ * حذف مفتاح من جدول bot_kv في PostgreSQL
+ */
+export async function deleteKeyFromDb(key) {
+  if (!isDbConfigured() || !key) return false;
+  try {
+    const ready = await initDatabase();
+    if (!ready || !pool) return false;
+    await pool.query('DELETE FROM bot_kv WHERE key = $1', [key]);
+    return true;
+  } catch (err) {
+    console.warn(`⚠️ فشل حذف المفتاح ${key} من PostgreSQL:`, err.message?.slice(0, 80));
+    return false;
+  }
+}
+
+/**
+ * جلب إحصائيات قاعدة البيانات السحابية (للوحة التحكم وفحص الصحة)
+ */
+export async function getDbStats() {
+  if (!isDbConfigured()) {
+    return { configured: false, connected: false };
+  }
+  try {
+    const ready = await initDatabase();
+    if (!ready || !pool) {
+      return { configured: true, connected: false };
+    }
+    const t0 = Date.now();
+    const [sessRes, kvRes, sizeRes] = await Promise.all([
+      pool.query('SELECT COUNT(*)::int AS count FROM session_storage'),
+      pool.query('SELECT COUNT(*)::int AS count FROM bot_kv'),
+      pool.query("SELECT pg_size_pretty(pg_database_size(current_database())) AS size").catch(() => ({ rows: [{ size: 'N/A' }] })),
+    ]);
+    const pingMs = Date.now() - t0;
+    return {
+      configured: true,
+      connected: true,
+      pingMs,
+      sessionFilesCount: sessRes.rows[0]?.count || 0,
+      kvKeysCount: kvRes.rows[0]?.count || 0,
+      dbSize: sizeRes.rows[0]?.size || 'N/A',
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      connected: false,
+      error: err.message?.slice(0, 100),
+    };
+  }
+}
