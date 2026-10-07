@@ -2,10 +2,33 @@ import api from './api.js';
 import { sendVoice } from './send.js';
 import { config } from '../config.js';
 
+/**
+ * تنظيف وتهيئة النص للصوت البشري المشحون بالمشاعر واللهجة المصرية
+ * يزيل الإيموجيات والماركداون التي تربك محرك الصوت ويضيف وقفات صوتية طبيعية
+ */
+export function emotiveVoiceText(text) {
+  let s = String(text || '').trim();
+  // إزالة الماركداون والرموز
+  s = s.replace(/[*_~`#]/g, '');
+  // إزالة الروابط
+  s = s.replace(/https?:\/\/\S+/g, '');
+  // إزالة استدعاءات الأوامر
+  s = s.replace(/\.[a-zA-Z0-9_\u0600-\u06FF]+/g, '');
+  // استبدال الإيموجيات بوقفات صوتية للتنفس والتعبير
+  s = s.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '، ');
+  // ضبط الفواصل وعلامات الوقف لتحسين نغمة ومشاعر الصوت في ElevenLabs
+  s = s.replace(/\s*،\s*/g, '، ');
+  s = s.replace(/\s*!\s*/g, '! ');
+  s = s.replace(/\s*\?\s*/g, '؟ ');
+  s = s.replace(/\s*…\s*/g, '... ');
+  s = s.replace(/\s{2,}/g, ' ');
+  return s.trim().slice(0, 450);
+}
+
 // 🎙️ طبقة الصوت الذكية — رسالة صوتية ناطقة بلهجة عربية ومصرية واقعية وطبيعية
 // الصوت الافتراضي الأساسي: adam (ElevenLabs عبر VEX) - يفهم ويتكلم عربي ومصري بطلاقة تامة
 export async function speak(sock, jid, text, { voice = null } = {}) {
-  const clean = String(text).trim().slice(0, 450);
+  const clean = emotiveVoiceText(text);
   if (!clean) throw new Error('مفيش كلام');
 
   // اختيار الصوت: آدم (ElevenLabs) افتراضياً للبوت لأنه أفضل صوت يفهم ويتكلم مصري وعربي

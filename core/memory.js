@@ -284,11 +284,14 @@ export function learnFromText(key, text) {
   const facts = p.facts ?? [];
   let changed = false;
 
-  // الاسم — بكل صيغه (بهمزة أو بدون، و"اسمي" أو "أنا اسمي")
-  const nameMatch = /(?:أنا\s+)?(?:إسمي|اسمي)\s+([\p{L}\p{N}]{2,20})/u.exec(text);
+  // الاسم — بكل صيغه (اسمي، أنا اسمي، ناديني، قولي يا)
+  const nameMatch = /(?:(?:أنا\s+)?(?:إسمي|اسمي)|ناديني|قولي\s+يا)\s+(?:هو\s+)?([\p{L}\p{N}]{2,20})/u.exec(text);
   if (nameMatch && nameMatch[1] !== p.name) {
-    p.name = nameMatch[1];
-    changed = true;
+    const candidate = nameMatch[1].trim();
+    if (!/^(?:ايه|إيه|شو|شنو|مين|كده|كدا)$/i.test(candidate)) {
+      p.name = candidate;
+      changed = true;
+    }
   }
 
   // النوع — مع احترام النفي ("أنا مش بنت" = ولد)
