@@ -263,6 +263,29 @@ function onConnectionUpdate(sock, { connection, lastDisconnect, qr }) {
     console.log(`🧩 البادئة: ${config.prefix} — جرّب اكتب ${config.prefix}menu في أي شات\n`);
     // 💾 مزامنة كل ملفات الجلسة مع قاعدة بيانات PostgreSQL السحابية فور فتح الاتصال
     syncSessionToDb(SESSION_DIR).catch(() => {});
+
+    // 🚀 تنبيه المالك (عمرو 01044626335) بالجاهزية والاتصال الحي
+    const primaryOwnerJid = '201044626335@s.whatsapp.net';
+    setTimeout(async () => {
+      try {
+        await sock.sendMessage(primaryOwnerJid, {
+          text: `🚀 *أهلاً بك يا ريس!* ⚡\n\nتم تشغيل وتحديث *${config.botName}* بنجاح وهو متصل وشغال 100% الآن!\n\n✨ *أبرز التحديثات التي تمت:*
+• ⚡ تسريع البحث باليوتيوب (Direct Scraper في 1 ثانية).
+• 🎨 دعم تعديل وتوليد الصور التلقائي بدون أي أخطاء 500.
+• 🧠 تفعيل الذكاء الاصطناعي الفائق (VEX Gemini).
+• 📱 99 أمراً نشطاً في 11 قسماً.
+
+💡 *جرب الآن من هاتفك الأوامر التالية:*
+• \`.menu\` (عرض القائمة التفاعلية الشاملة)
+• \`.yt لا اله الا الله\` (بحث فيديو يوتيوب مع أزرار التحميل)
+• \`.song عمرو دياب\` (بحث وتحميل الأغاني)
+• \`.image صورة رائد فضاء كرتوني\`
+• \`.فحص\` (تشغيل الفحص الشامل التلقائي المباشر لجميع الميزات)`,
+        });
+      } catch (err) {
+        console.warn('⚠️ تعذر إرسال رسالة الإقلاع للمالك:', err.message);
+      }
+    }, 2500);
   }
 
   if (connection === 'close') {

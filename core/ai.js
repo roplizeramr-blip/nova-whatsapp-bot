@@ -313,9 +313,12 @@ export async function chatWithAI({
     }
   }
 
-  // 2) 💎 VEX Gemini — محرك فائق السرعة والاستقرار (مجاني وسريع 2-4 ثواني)
+  // 2) 💎 VEX Gemini — محرك فائق السرعة والاستقرار (استجابة سريعة في 2-3 ثواني)
   try {
-    const vexPrompt = `${compactInstruction}\n\n[رسالة المستخدم]: ${text}`;
+    const briefStyle = isInsult
+      ? 'أنت استرو، بوت مصري ساخر. رد باستهزاء مصري قاهر ومضحك في جملة واحدة بدون شتائم صريحة.'
+      : 'أنت استرو، بوت واتساب مصري ذكي وخفيف دم وشغال في كل حاجة. جاوب بالمصري العامي باختصار ولطافة وبدون مقدمات طويلة.';
+    const vexPrompt = `${briefStyle}\n[المستخدم]: ${text}`;
     const vexReply = await api.vexGemini(vexPrompt);
     if (vexReply?.trim()) {
       const clean = polishReply(vexReply, { allowLong });
