@@ -240,10 +240,14 @@ export async function maybeAutoReply(sock, m) {
     const caches = db.get('replyCache', {});
     const hit = caches[m.jid]?.[normQ(text)];
     if (hit && Date.now() - hit.at < 600000) {
-      await sendQuickReplies(sock, m.jid, {
-        text: hit.reply,
-        buttons: [{ label: '🎧 قولها بصوت', id: '.ai voice' }],
-      });
+      if (hit.reply.length > 300) {
+        await sendQuickReplies(sock, m.jid, {
+          text: hit.reply,
+          buttons: [{ label: '🎧 استمع بصوت', id: '.ai voice' }],
+        });
+      } else {
+        await sendText(sock, m.jid, hit.reply);
+      }
       return;
     }
   }
@@ -322,21 +326,27 @@ export async function maybeAutoReply(sock, m) {
       chillTick(key);
       return;
     } catch {
-      // فشل الصوت → نص عادي
-      await sendQuickReplies(sock, m.jid, {
-        text: reply,
-        buttons: [{ label: '🎧 قولها بصوت', id: '.ai voice' }],
-      });
+      // فشل الصوت → نص عادي بدون أزرار مزعجة
+      await sendText(sock, m.jid, reply);
       return;
     }
   }
 
-  // 💡 لو سأل عن حاجة البوت بيعملها → زر ينفّذها على طول
+  // 💡 أزرار الإجراءات الحيوية فقط (بدون زر الصوت الإجباري لكل رد عادي)
   const hint = hintFor(text);
-  const buttons = [{ label: '🎧 قولها بصوت', id: '.ai voice' }];
-  if (hint) buttons.unshift({ label: `⚡ ${config.prefix}${hint}`, id: `${config.prefix}${hint}` });
+  const buttons = [];
+  if (hint) {
+    buttons.push({ label: `⚡ ${config.prefix}${hint}`, id: `${config.prefix}${hint}` });
+  } else if (reply.length > 350) {
+    // فقط في الشروحات أو الإجابات الطويلة جداً نتيح خيار الاستماع الصوتي
+    buttons.push({ label: '🎧 استمع بصوت', id: '.ai voice' });
+  }
 
-  await sendQuickReplies(sock, m.jid, { text: reply, buttons });
+  if (buttons.length > 0) {
+    await sendQuickReplies(sock, m.jid, { text: reply, buttons });
+  } else {
+    await sendText(sock, m.jid, reply);
+  }
 
   // 😐 لو مود هادي → عديّ رسالة من فترة التبريد
   chillTick(key);
