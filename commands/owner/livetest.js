@@ -1,5 +1,5 @@
 import api from '../../core/api.js';
-import { sendText, sendQuickReplies } from '../../core/send.js';
+import { sendText, sendImage, sendQuickReplies } from '../../core/send.js';
 import { config } from '../../config.js';
 
 // 🧪 أمر الفحص الشامل المباشر (.livetest / .فحص)

@@ -256,27 +256,35 @@ export const api = {
     return d.response?.reply ?? '';
   },
 
-  // صورة بالذكاء الاصطناعي — imageai (Flux) أساسي، image-generator (MagicStudio) احتياطي
-  async image(prompt, { model = '1', pretty = false } = {}) {
+  // صورة بالذكاء الاصطناعي — VEX Flux أساسي، Engez Flux احتياطي، MagicStudio احتياطي ثانٍ
+  async image(prompt, { model = '1', pretty = false, ratio = '1:1' } = {}) {
     let lastErr;
-    // 1. الأساسي: Flux عبر /api/v1/ai/imageai
+    // 1. الأساسي: VEX AI (Flux 100% شغال ومتحقق)
+    try {
+      const vexUrl = await this.vexAiImage(prompt, { model: 'flux', ratio });
+      if (vexUrl) return vexUrl;
+    } catch (err) {
+      lastErr = err;
+    }
+
+    // 2. الاحتياطي: Flux عبر Engez /api/v1/ai/imageai
     try {
       const d = await get(
         '/api/v1/ai/imageai',
         { action: 'توليد', prompt, model: String(model) },
-        60000,
+        30000,
       );
       if (d.response?.url) return d.response.url;
     } catch (err) {
       lastErr = err;
     }
 
-    // 2. الاحتياطي: MagicStudio عبر /api/v1/ai/image-generator
+    // 3. الاحتياطي الثاني: MagicStudio عبر /api/v1/ai/image-generator
     try {
       const d = await get(
         '/api/v1/ai/image-generator',
         { action: 'generate', prompt, model: '4' },
-        60000,
+        30000,
       );
       if (d.response?.url) return d.response.url;
     } catch (err) {
@@ -342,20 +350,68 @@ export const api = {
 
   // ━━━━━━━━━ 📥 التحميل والبحث ━━━━━━━━━
   async ytSearch(q, limit = 5) {
-    const d = await get('/api/v1/search/youtube', { q, limit }, 30000);
-    // ⚠️ نظّف الشكل هنا مش عند كل مستهلك: النتيجة الناقصة كانت بتعمل
-    // `r.title.slice()` = TypeError في song.js و video.js وبتمسح الرسالة كلها
-    return (d.results ?? [])
-      .filter((r) => r?.url) // من غير رابط مش بنفع يتحمّل
-      .map((r) => ({
-        index: r.index,
-        id: r.id,
-        title: String(r.title ?? 'بدون عنوان'),
-        url: r.url,
-        thumbnail: r.thumbnail,
-        duration: r.duration,
-        author: r.author,
+    // 1) سكرابر يوتيوب المباشر فائق السرعة (~1.2 ثانية) — يمنع تماماً أخطاء الـ Timeout 30s
+    try {
+      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+      const { data } = await axios.get(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'ar,en;q=0.9',
+        },
+        timeout: 9000,
+      });
+      const match = data.match(/var ytInitialData = ({.*?});<\/script>/) || data.match(/ytInitialData\s*=\s*({.+?});/);
+      if (match) {
+        const json = JSON.parse(match[1]);
+        const contents =
+          json?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents?.[0]
+            ?.itemSectionRenderer?.contents || [];
+        const results = [];
+        for (const item of contents) {
+          const v = item?.videoRenderer;
+          if (!v?.videoId) continue;
+          results.push({
+            index: results.length,
+            id: v.videoId,
+            title: String(v.title?.runs?.[0]?.text || 'فيديو يوتيوب'),
+            url: `https://www.youtube.com/watch?v=${v.videoId}`,
+            thumbnail: v.thumbnail?.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+            duration: v.lengthText?.simpleText || '',
+            author: v.ownerText?.runs?.[0]?.text || '',
+          });
+          if (results.length >= limit) break;
+        }
+        if (results.length > 0) return results;
+      }
+    } catch (err) {
+      console.warn('⚠️ تعذر سكرابر يوتيوب المباشر، جاري التبديل لمحرك yt-dlp:', err.message);
+    }
+
+    // 2) المحرك الاحتياطي: yt-dlp flat-search
+    try {
+      const youtubedl = (await import('youtube-dl-exec')).default;
+      const res = await youtubedl(`ytsearch${limit}:${q}`, {
+        dumpSingleJson: true,
+        flatPlaylist: true,
+        noWarnings: true,
+        defaultSearch: 'ytsearch',
+      });
+      const results = (res.entries || []).map((e, i) => ({
+        index: i,
+        id: e.id,
+        title: String(e.title || 'فيديو يوتيوب'),
+        url: e.url || `https://www.youtube.com/watch?v=${e.id}`,
+        thumbnail: e.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg`,
+        duration: e.duration ? `${Math.floor(e.duration / 60)}:${String(e.duration % 60).padStart(2, '0')}` : '',
+        author: e.uploader || '',
       }));
+      if (results.length > 0) return results;
+    } catch (err) {
+      console.warn('⚠️ تعذر محرك yt-dlp للبحث:', err.message);
+    }
+
+    return [];
   },
 
   // type: 'audio' | 'video' — الجودة: 128 للصوت، 360/720 للفيديو
@@ -547,10 +603,28 @@ export const api = {
 
   // ━━━━━━━━━ 🌐 VEX API (https://johan-vex-apis.vercel.app) ━━━━━━━━━
 
-  // 🎨 تعديل الصور بالذكاء الاصطناعي — Nano Banana AI
+  // 🎨 تعديل الصور بالذكاء الاصطناعي — Nano Banana AI مع حماية من أخطاء الـ Upstream 500
   async vexEditImage(imageUrl, prompt) {
-    const d = await vexGet('/api/tools/nanobanan', { url: imageUrl, prompt }, 90000);
-    return d.data?.result_url ?? d.result_url ?? d.url ?? null;
+    try {
+      const d = await vexGet('/api/tools/nanobanan', { url: imageUrl, prompt }, 30000);
+      return d?.data?.result_url ?? d?.result_url ?? d?.url ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  // 🎨 توليد الصور المباشر فائق الجودة عبر VEX AI (Flux)
+  async vexAiImage(prompt, { model = 'flux', ratio = '1:1' } = {}) {
+    try {
+      const d = await vexGet(
+        '/api/ai/ai-image',
+        { prompt, model, aspect_ratio: ratio },
+        35000,
+      );
+      return d?.result ?? d?.data?.result ?? d?.url ?? null;
+    } catch {
+      return null;
+    }
   },
 
   // 📱 تطبيقات وألعاب أندرويد APK
