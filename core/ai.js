@@ -1,4 +1,5 @@
 import api from './api.js';
+import { db } from './db.js';
 import { isOpen, noteEmpty } from './api.js';
 import { chatGroq, groqAnalyze, isGroqReady } from './groq.js';
 import { PERSONA_FULL, FEW_SHOTS_FULL, PERSONA_COMPACT, LAYERS, MODES, RELATIONSHIPS, INSULT_DEFENSE, BOT_MOODS } from './persona.js';
@@ -279,6 +280,50 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     };
   }
 
+  // 🎯 فحص فوري ومحكم لمنع الهلوسة في كشف الأسماء والهوية (Zero-Hallucination Identity Resolution)
+  if (/(?:مين\s*(?:انا|أنا)|اسمي\s*(?:ايه|إيه|شو|شنو)|عارف\s*اسمي|تعرف\s*(?:انا\s*|أنا\s*)?مين|عارفني|تعرفني)/i.test(text)) {
+    if (contact?.role === 'حبيبة' || contact?.name?.includes('شروق')) {
+      return {
+        reply: 'أكيد عارفاكِ يا شروق يا ست البنات وحبيبة مطوري أدهم الغالية! 💗🌹 منورة الدنيا كلها، وأي حاجة تطلبيها تتنفذ فوراً لعيونك!',
+        engine: 'direct-shorouk',
+      };
+    }
+    if (contact?.name) {
+      return {
+        reply: `أكيد عارفك يا ${contact.name} يا غالي! إنت مسجل عندي كـ ${contact.role || 'صاحب عزيز'} ومنورني دايماً 😄✨`,
+        engine: 'direct-contact',
+      };
+    }
+    if (profile?.name && profile.name.trim() && profile.name !== 'صديقي' && profile.name !== 'unknown') {
+      return {
+        reply: `أكيد فاكرك يا ${profile.name} يا باشا! منورني يا غالي وأنا مسجل اسمك عندي، اتفضل أؤمرني وعيوني ليك 😄✨`,
+        engine: 'direct-known-profile',
+      };
+    }
+    // لم يذكر اسمه من قبل — ممنوع الهلوسة تماماً!
+    return {
+      reply: 'يا هلا بيك يا صاحبي! إنت منورني وبتكلمني في شاتنا ده، بس لسه مقولتليش اسمك يا غالي.. تحب أناديك بإيه عشان أحفظه عندي وأفتكرك بيه دايماً؟ 😊🤍',
+      engine: 'direct-ask-name',
+    };
+  }
+
+  // 🎯 حفظ فوري للاسم لو المستخدم عرف نفسه: "اسمي أحمد" / "ناديني محمد"
+  const selfIntroMatch = /(?:(?:أنا\s+)?(?:إسمي|اسمي)|ناديني|قولي\s+يا)\s+(?:هو\s+)?([\p{L}\p{N}]{2,20})/u.exec(text);
+  if (selfIntroMatch && !isDev) {
+    const introducedName = selfIntroMatch[1].trim();
+    if (introducedName && introducedName !== 'ايه' && introducedName !== 'إيه') {
+      profile.name = introducedName;
+      learnFromText(idKey, text);
+      const allUsers = db.get('users', {});
+      allUsers[idKey] = { ...profile, name: introducedName };
+      db.set('users', allUsers);
+      return {
+        reply: `يا أهلاً وسهلاً يا ${introducedName} يا غالي! 🌟 اتشرفت بمعرفتك وحفظت اسمك عندي في السيرفر ومش هنساه خلاص، منورني يا باشا 😄❤️`,
+        engine: 'direct-save-name',
+      };
+    }
+  }
+
   // 🧠 التعلم + الإحساس (مرة واحدة)
   if (text) {
     learnFromText(idKey, text);
@@ -384,7 +429,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
 
     const briefStyle = isInsult
       ? 'أنت استرو، بوت مصري ساخر. رد باستهزاء مصري قاهر ومضحك في جملة واحدة بدون شتائم صريحة.'
-      : 'أنت استرو، بوت واتساب مصري ذكي وخفيف دم وشغال في كل حاجة. جاوب بالمصري العامي باختصار ولطافة وبدون مقدمات طويلة وبدون أن تقول أنا نموذج لغوي أو روبوت أو تم تطويري بواسطة جوجل.';
+      : 'أنت استرو، بوت واتساب مصري ذكي وجدع وشغال في كل حاجة. جاوب بالمصري العامي باختصار ولطافة وبدون مقدمات طويلة وبدون أن تقول أنا نموذج لغوي أو ذكاء اصطناعي أو تم تطويري بواسطة جوجل. قاعدة حاسمة: ممنوع نهائياً اختراع أو تخمين أي أسماء أشخاص لم تُذكر في المحادثة مطلقاً، وإذا سألك شخص عن اسمه ولم يكن مسجلاً، اسأله بلباقة.';
 
     const recentConvo = convo.slice(-3).map((c) => `${c.role === 'assistant' ? 'استرو' : 'المستخدم'}: ${c.content}`).join('\n');
     const convoContext = recentConvo ? `\n[سياق المحادثة السابقة]:\n${recentConvo}\n` : '';
