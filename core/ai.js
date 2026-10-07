@@ -217,16 +217,49 @@ function isRepetitive(newReply, history) {
   return false;
 }
 
-export async function chatWithAI({
-  text, key, sender, senderAlt, pushName, voice = false,
-  extra = '', allowLong = false, mode = 'normal', variants = 0,
-}) {
-  const idKey = key ?? sender;
+export async function chatWithAI(firstArg, secondArg, thirdArg) {
+  let text = '';
+  let key, sender, senderAlt, pushName;
+  let voice = false;
+  let extra = '';
+  let allowLong = false;
+  let mode = 'normal';
+  let variants = 0;
+
+  if (typeof firstArg === 'object' && firstArg !== null && !Array.isArray(firstArg)) {
+    text = firstArg.text ?? '';
+    key = firstArg.key;
+    sender = firstArg.sender;
+    senderAlt = firstArg.senderAlt;
+    pushName = firstArg.pushName;
+    voice = firstArg.voice ?? false;
+    extra = firstArg.extra ?? '';
+    allowLong = firstArg.allowLong ?? false;
+    mode = firstArg.mode ?? 'normal';
+    variants = firstArg.variants ?? 0;
+  } else {
+    text = typeof firstArg === 'string' ? firstArg : (firstArg?.toString?.() ?? '');
+    const profile = typeof secondArg === 'object' && secondArg !== null ? secondArg : {};
+    const opts = typeof thirdArg === 'object' && thirdArg !== null ? thirdArg : {};
+    key = profile.key ?? profile.jid ?? secondArg;
+    sender = profile.jid ?? secondArg;
+    pushName = profile.name ?? profile.pushName;
+    extra = opts.extra ?? '';
+    voice = opts.voice ?? false;
+    allowLong = opts.allowLong ?? false;
+    mode = opts.mode ?? 'normal';
+    variants = opts.variants ?? 0;
+  }
+
+  text = String(text || '').trim();
+  const idKey = key ?? sender ?? 'unknown';
   const profile = getProfile(idKey);
   const contact = findContact(sender, senderAlt, idKey);
 
   // 🧠 التعلم + الإحساس (مرة واحدة)
-  learnFromText(idKey, text);
+  if (text) {
+    learnFromText(idKey, text);
+  }
   const mood = detectMood(text);
   if (mood) rememberMood(idKey, mood);
 
@@ -245,14 +278,14 @@ export async function chatWithAI({
       : '';
 
   // 🧠 تاريخ المحادثة الحقيقي — النموذج يشوف الكلام كأنه محادثة، مش سطور
-  const history = (profile.lastMessages ?? []).slice(-6);
+  const history = (profile?.lastMessages ?? []).slice(-6);
   // بنشيل بس الرسالة الحالية نفسها (اتذكرت قبل النداء) — startsWith كانت
   // بتشيل كلام قديم يبدأ بنفس الكلمات ("ازيك" بتقطع "ازيك يا معلم")
   const convo = history
-    .filter((h) => h.text && h.text.trim() !== text.trim())
-    .map((h) => ({ role: h.role === 'bot' ? 'assistant' : 'user', content: String(h.text).slice(0, 300) }));
+    .filter((h) => h?.text && String(h.text).trim() !== text)
+    .map((h) => ({ role: h.role === 'bot' ? 'assistant' : 'user', content: String(h.text || '').slice(0, 300) }));
 
-  const userMsg = { role: 'user', content: text.slice(0, 500) };
+  const userMsg = { role: 'user', content: (text || 'أهلاً').slice(0, 500) };
   // البديل بتاع منع التكرار
   const retryHint = variants > 0
     ? `\n⚠️ الرد اللي قبله كان مكرر — جاوب بنبرة مختلفة تماماً وابدأ بكلمة مختلفة خالص.`
