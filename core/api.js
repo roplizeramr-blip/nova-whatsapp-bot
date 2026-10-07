@@ -646,10 +646,13 @@ export const api = {
     }));
   },
 
-  // 🗣️ تحويل النص إلى صوت مشاهير وشخصيات
-  async vexTts(text, voice = 'messi') {
-    const d = await vexGet('/api/ai/tts', { text, voice, format: 'json' });
-    return d.audio_url ?? d.data?.audio_url ?? d.url ?? null;
+  // 🗣️ تحويل النص إلى صوت طبيعي ومشاهير (ElevenLabs + VoxBox)
+  async vexTts(text, voice = 'adam') {
+    return this.vexTtsUrl(text, voice);
+  },
+
+  vexTtsUrl(text, voice = 'adam') {
+    return `https://johan-vex-apis.vercel.app/api/ai/tts?text=${encodeURIComponent(String(text).slice(0, 500))}&voice=${encodeURIComponent(voice)}`;
   },
 
   // 🎬 أفلام ومسلسلات من موقع أكوام

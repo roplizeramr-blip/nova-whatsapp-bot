@@ -19,11 +19,26 @@ export default {
         ],
       });
     }
-    const known = ['غوكو', 'ميسي', 'ايمينيم', 'ناروتو', 'لوفي', 'كرابس'];
-    const first = text.split(/\s+/)[0];
+    const known = [
+      'adam', 'آدم', 'ادم',
+      'liam', 'ليام',
+      'bella', 'بيلا',
+      'antoni', 'أنطوني', 'انطوني',
+      'messi', 'ميسي',
+      'goku', 'غوكو',
+      'eminem', 'ايمينيم', 'إيمينيم',
+      'therock', 'ذا_روك', 'روك',
+      'snoop', 'سنوب',
+      'drake', 'دريك',
+      'kanye', 'كانيه',
+      'morgan', 'مورغان', 'مورجان',
+      'naruto', 'ناروتو',
+      'luffy', 'لوفي'
+    ];
+    const first = text.split(/\s+/)[0].toLowerCase();
     const character = known.find((c) => first.includes(c));
     const content = character ? text.slice(first.length).trim() : text;
-    if (!content) return m.reply('اكتب النص بعد الشخصية: `.animevoice غوكو أنا قادم`');
-    await speakAs(sock, m.jid, content.slice(0, 400), character ?? 'غوكو');
+    if (!content) return m.reply('اكتب النص بعد الشخصية: `.animevoice messi أنا ميسي` أو `.animevoice adam يا هلا`');
+    await speakAs(sock, m.jid, content.slice(0, 450), character ?? 'adam');
   },
 };

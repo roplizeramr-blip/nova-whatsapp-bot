@@ -209,7 +209,18 @@ export async function maybeAutoReply(sock, m) {
 
   const awayExtra = isReturnee ? welcomeBackExtra(profile, away) : '';
 
-  // 👁️ رؤية الصور: صورة + كلام في الخاص → يوصفها بالذكاء ويجاوب عليها
+  // 🛠️ فحص وتنفيذ الأدوات الذكية التفاعلية فوراً بدون أي تأخير (تعديل صور، فيديو، رسم، صوت، تفريغ...)
+  const handled = await dispatchToolAction(sock, m, text, profile);
+  if (handled) {
+    bump('commands');
+    bump('aiReplies');
+    awardXp(key, 5);
+    rememberMessage(key, 'bot', `[أداة منفذة: ${text.slice(0, 40)}]`);
+    chillTick(key);
+    return;
+  }
+
+  // 👁️ رؤية الصور للمحادثة العامة: صورة + كلام في الخاص → يوصفها بالذكاء ويجاوب عليها
   let visionHint = '';
   if (!m.isGroup && hasImage) {
     try {
@@ -224,17 +235,6 @@ export async function maybeAutoReply(sock, m) {
   }
   const extra = [awayExtra, visionHint].filter(Boolean).join(' ');
 
-  // 🛠️ فحص وتنفيذ الأدوات الذكية التفاعلية (AI Tool Calling & Intent Orchestrator)
-  const handled = await dispatchToolAction(sock, m, text, profile);
-  if (handled) {
-    bump('commands');
-    bump('aiReplies');
-    awardXp(key, 5);
-    rememberMessage(key, 'bot', `[أداة منفذة: ${text.slice(0, 40)}]`);
-    chillTick(key);
-    return;
-  }
-
   // ⚡ كاش الردود المتشابهة — نفس السؤال في 10 دقايق = رد فوري (بدون صور)
   if (!hasImage && !wantsVoice && !isReturnee) {
     const caches = db.get('replyCache', {});
@@ -248,101 +248,60 @@ export async function maybeAutoReply(sock, m) {
     }
   }
 
-  let reply = null;
-  try {
-    ({ reply } = await chatWithAI({
-      text,
-      key,
-      sender: m.sender,
-      senderAlt: m.senderAlt,
-      pushName: m.pushName,
-      voice: wantsVoice,
-      extra,
-      mode: db.get('modes', {})[m.jid] ?? 'normal',
-    }));
-    bump('aiReplies');
-    awardXp(key, 3);
-  } catch {
-    try {
-      reply = await api.simsimi(text);
-    } catch {
-      reply = null;
-    }
-  }
-  if (!reply) {
-    await sendText(sock, m.jid, '🥴 معلش يا صاحبي الموود فاصل شوية — كلمني تاني');
-    return;
-  }
-  // 🚫 لو الرد نص خطأ من المزوّد — متخزنش في الذاكرة (كان بيخلي البوت يقلّد الأخطاء)
-  if (isErrorText(reply)) {
-    await sendText(sock, m.jid, '🥴 معلش يا صاحبي الشبكة ضعيفة دلوقتي — كلمني تاني');
-    return;
-  }
-  rememberMessage(key, 'bot', reply);
+  // 💬 رد الذكاء الاصطناعي
+  let reply = await chatWithAI(text, profile, { extra });
 
-  // 💾 خزّن في كاش الردود (لغير الصور والصوت)
-  if (!hasImage && !wantsVoice) {
+  // 🤐 كشف أخطاء السيرفر — رد مصري لطيف بدل النص القبيح
+  if (isErrorText(reply)) {
+    console.error('❌ خطأ في رد الذكاء الاصطناعي:', reply);
+    reply = 'يا لهوي! السيرفر شكله بيهيس شوية دلوقتي، ثواني وهفوقلك يا صاحبي 😅';
+  }
+
+  // 💾 حفظ في كاش الردود
+  if (!hasImage && !wantsVoice && !isReturnee && reply.length > 5) {
     const caches = db.get('replyCache', {});
-    const forChat = caches[m.jid] ?? {};
-    forChat[normQ(text)] = { reply, at: Date.now() };
-    const entries = Object.entries(forChat);
-    if (entries.length > 30) {
-      entries.sort((a, b) => a[1].at - b[1].at);
-      for (const [k] of entries.slice(0, entries.length - 30)) delete forChat[k];
-    }
-    caches[m.jid] = forChat;
+    caches[m.jid] = { ...(caches[m.jid] ?? {}), [normQ(text)]: { reply, at: Date.now() } };
     db.set('replyCache', caches);
   }
 
-  // حفظ آخر سؤال ورد لزرار المتابعة
-  // ⚠️ كان متخزّن بـ m.jid بس — نفس مشكلة chat.js: في جروب، أي حد يضغط
-  // "قولها بصوت" بيبعت إجابة حد تاني. دلوقتي لكل مستخدم حالته.
-  const states = db.get('aiState', {});
-  const aiKey = `${m.jid}::${key}`;
-  states[aiKey] = { lastPrompt: text, lastReply: reply, by: key, at: now };
-  // 🧹 تشذيب — نحتفظ بآخر 50 حالة بس (كانت بتتراكم للأبد)
-  const stateKeys = Object.keys(states);
-  if (stateKeys.length > 50) {
-    stateKeys
-      .sort((a, b) => (states[a]?.at ?? 0) - (states[b]?.at ?? 0))
-      .slice(0, stateKeys.length - 50)
-      .forEach((k) => delete states[k]);
-  }
-  db.set('aiState', states);
-
-  // 😂 ايموشن: رياكشن ضحك لو هو ضحك
-  if (isLaughing) {
-    sock.sendMessage(m.jid, { react: { text: '😂', key: m.msg.key } }).catch(() => {});
-  }
-
+  // 🎧 لو المستخدم طلب صوت أو باعت فويس نوت → نرد صوتيًا
   if (wantsVoice || isVoiceInput) {
+    const voiceText = cleanForVoice(reply);
     try {
-      await speak(sock, m.jid, cleanForVoice(reply));
-      chillTick(key);
+      await speak(sock, m.jid, voiceText);
+      bump('aiReplies');
+      awardXp(key, 2);
+      rememberMessage(key, 'bot', `[رسالة صوتية: ${voiceText.slice(0, 40)}]`);
       return;
     } catch {
-      // فشل الصوت → نص عادي
-      await sendQuickReplies(sock, m.jid, {
-        text: reply,
-        buttons: [{ label: '🎧 قولها بصوت', id: '.ai voice' }],
-      });
-      return;
+      // فشل الصوت؟ ابعت نص كاحتياطي
     }
   }
 
-  // 💡 لو سأل عن حاجة البوت بيعملها → زر ينفّذها على طول
-  const hint = hintFor(text);
-  const buttons = [{ label: '🎧 قولها بصوت', id: '.ai voice' }];
-  if (hint) buttons.unshift({ label: `⚡ ${config.prefix}${hint}`, id: `${config.prefix}${hint}` });
-
-  await sendQuickReplies(sock, m.jid, { text: reply, buttons });
-
-  // 😐 لو مود هادي → عديّ رسالة من فترة التبريد
-  chillTick(key);
-
-  // 💭 استخراج ذكرى كل 8 رسايل — في الخلفية من غير ما يأخر الرد
-  const fresh = db.get('users', {})[key];
-  if ((fresh?.msgCount ?? 0) % 8 === 0) {
-    extractMemory(key).catch(() => {});
+  // 💡 اقتراح أمر ذكي من الكلام — بيطلع أزرار تفاعلية تحت الرد
+  const hint = hintFor(text, isLaughing);
+  const buttons = [];
+  if (hint) {
+    buttons.push({ label: hint.label, id: hint.command });
   }
+  // زر الصوت دايمًا متاح كخيار لطيف
+  if (!wantsVoice && reply.length < 200) {
+    buttons.push({ label: '🎧 قولها بصوت', id: '.ai voice' });
+  }
+
+  if (buttons.length > 0) {
+    await sendQuickReplies(sock, m.jid, {
+      text: reply,
+      buttons,
+    });
+  } else {
+    await sendText(sock, m.jid, reply);
+  }
+
+  bump('aiReplies');
+  awardXp(key, 2);
+  rememberMessage(key, 'bot', reply);
+  chillTick(key);
 }
+
+export default { maybeAutoReply, isAddressedToBot };
