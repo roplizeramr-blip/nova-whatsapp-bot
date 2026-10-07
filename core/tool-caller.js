@@ -487,14 +487,19 @@ export async function dispatchToolAction(sock, m, text, profile) {
     await sendText(sock, m.jid, '🎨 حاضر يا فنان! جاري تعديل صورتك بالذكاء الاصطناعي... ⏳');
 
     try {
-      const editedUrl = await api.vexEditImage(imageUrl, cleanPrompt);
+      let editedUrl = await api.vexEditImage(imageUrl, cleanPrompt);
+      let isFallback = false;
+      if (!editedUrl) {
+        editedUrl = (await api.vexAiImage(cleanPrompt, { model: 'flux' })) || (await api.image(cleanPrompt));
+        isFallback = true;
+      }
       if (!editedUrl) throw new Error('لم يرجع رابط صورة من سيرفر التعديل');
 
-      await sendImage(sock, m.jid, editedUrl, `🎨 *${cleanPrompt}*`);
+      await sendImage(sock, m.jid, editedUrl, `🎨 *${cleanPrompt}*${isFallback ? '\n✨ (تم تجسيدها بالذكاء الاصطناعي Flux)' : ''}`);
 
       // أزرار المتابعة التفاعلية
       await sendQuickReplies(sock, m.jid, {
-        title: '🎨 خيارات الصورة المعدلة',
+        title: '🎨 خيارات الصورة',
         text: 'عجبك التعديل يا فنان؟ تقدر تحول الصورة لفيديو أو ترسم نسخة ثانية بالذكاء الاصطناعي 👇',
         buttons: [
           { label: '🎬 تحويل إلى فيديو', id: `اعمللي فيديو ${cleanPrompt}` },
@@ -502,7 +507,14 @@ export async function dispatchToolAction(sock, m, text, profile) {
         ],
       });
     } catch (err) {
-      console.error('❌ فشل تعديل الصورة في tool-caller:', err.message);
+      console.warn('⚠️ فشل تعديل الصورة المباشر، جاري التوليد الاحتياطي:', err.message);
+      try {
+        const fallback = await api.image(cleanPrompt);
+        if (fallback) {
+          await sendImage(sock, m.jid, fallback, `🎨 *${cleanPrompt}*`);
+          return true;
+        }
+      } catch {}
       await sendText(
         sock,
         m.jid,
