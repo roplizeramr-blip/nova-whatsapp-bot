@@ -3,6 +3,7 @@ import { sendText, sendImage, sendVideo, sendVoice, sendQuickReplies } from './s
 import { db } from './db.js';
 import { speak } from './tts.js';
 import { imageToUrl } from './protection.js';
+import { getMediaSource, uploadBuffer } from './media.js';
 
 // 🤖 AI Tool Calling & Intent Orchestrator لـ Astro / Nova
 // يكتشف نوايا وأفعال المستخدم الطبيعية في المحادثة وينفذ الأدوات التفاعلية فوراً
@@ -36,19 +37,58 @@ export function cleanUserInput(str) {
 }
 
 /**
+ * استخراج رابط الصورة بجودة عالية سواء من الرسالة الحالية أو من الاقتباس والرد
+ * @param {object} m - كائن الرسالة
+ * @returns {Promise<string|null>} رابط الصورة المرفوعة
+ */
+export async function extractImageUrl(m) {
+  if (!m) return null;
+
+  // 1) الطريقة المباشرة والأكثر دقة: تحميل buffer عبر getMediaSource ثم رفعه
+  try {
+    const media = await getMediaSource(m);
+    if (media?.buffer && media.kind === 'image') {
+      const url = await uploadBuffer(media.buffer);
+      if (url) return url;
+    }
+  } catch {}
+
+  // 2) تجربة imageToUrl للرسالة الحالية
+  try {
+    const direct = await imageToUrl(m);
+    if (direct) return direct;
+  } catch {}
+
+  // 3) تجربة imageToUrl للرسالة المقتبسة
+  try {
+    const ctx = m.message?.extendedTextMessage?.contextInfo;
+    const quoted = ctx?.quotedMessage || m.quoted;
+    if (quoted) {
+      const fromQuoted = await imageToUrl(quoted);
+      if (fromQuoted) return fromQuoted;
+    }
+  } catch {}
+
+  return null;
+}
+
+/**
  * فحص ما إذا كانت الرسالة الحالية تحتوي على صورة أو تقتبس صورة
  * @param {object} m - كائن الرسالة
  * @returns {boolean}
  */
 export function hasAttachedImage(m) {
   if (!m) return false;
+  const ctx = m.message?.extendedTextMessage?.contextInfo;
+  const quoted = ctx?.quotedMessage || m.quoted;
   return Boolean(
     m?.message?.imageMessage ||
     m?.msg?.imageMessage ||
     m?.msg?.message?.imageMessage ||
     m?.imageMessage ||
-    m?.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage ||
-    m?.quoted?.message?.imageMessage ||
+    ctx?.quotedMessage?.imageMessage ||
+    quoted?.imageMessage ||
+    quoted?.isImage ||
     m?.quoted?.imageMessage ||
     m?.quoted?.isImage
   );
@@ -56,15 +96,24 @@ export function hasAttachedImage(m) {
 
 // قائمة المشاهير والشخصيات الصوتية المدعومة وألقابهم الشائعة
 const CELEBRITY_VOICE_MAP = [
+  // 🌟 أصوات ElevenLabs الطبيعية فائقة الدقة (عربي ومصري بطلاقة)
+  { id: 'adam', aliases: ['ادم', 'آدم', 'adam', 'استرو', 'صوتك', 'نوفا'] },
+  { id: 'liam', aliases: ['ليام', 'liam'] },
+  { id: 'antoni', aliases: ['انطوني', 'أنطوني', 'antoni'] },
+  { id: 'bella', aliases: ['بيلا', 'bella'] },
+  { id: 'matilda', aliases: ['ماتيلدا', 'matilda'] },
+
+  // ⚽🎭 مشاهير VoxBox
   { id: 'messi', aliases: ['ميسي', 'ليونيل ميسي', 'ليو ميسي', 'messi', 'lionel messi'] },
   { id: 'goku', aliases: ['غوكو', 'كوكو', 'جوكو', 'goku', 'son goku'] },
   { id: 'eminem', aliases: ['ايمينيم', 'امينيم', 'eminem', 'slim shady'] },
   { id: 'therock', aliases: ['ذا روك', 'روك', 'the rock', 'therock', 'صخرة', 'دواين جونسون', 'dwayne johnson'] },
   { id: 'neymar', aliases: ['نيمار', 'نيمار جونيور', 'neymar', 'neymar jr'] },
-  { id: 'mbappe', aliases: ['مبابي', 'كيليان مبابي', 'mbappe', 'kylian mbappe'] },
+  { id: 'mbappe', aliases: ['مبابي', 'كيليان مبابي', 'mbappe', 'kylian مبابي'] },
   { id: 'kanye', aliases: ['كانيه', 'كاني', 'كانيي', 'كانيه ويست', 'كاني ويست', 'kanye', 'kanye west'] },
   { id: 'drake', aliases: ['دريك', 'drake'] },
   { id: 'snoop', aliases: ['سنوب', 'سنوب دوج', 'سنوب دوغ', 'سنوب دوجي', 'snoop', 'snoop dogg'] },
+  { id: 'morgan', aliases: ['مورغان', 'مورجان', 'مورغان فريمان', 'morgan', 'morgan freeman'] },
   { id: 'ronaldo', aliases: ['رونالدو', 'كريستيانو', 'الدون', 'ronaldo', 'cr7'] },
   { id: 'trump', aliases: ['ترامب', 'دونالد ترامب', 'trump', 'donald trump'] },
   { id: 'biden', aliases: ['بايدن', 'جو بايدن', 'biden', 'joe biden'] },
@@ -82,9 +131,24 @@ export function detectIntent(rawText, m = null) {
   if (!norm) return null;
 
   // ─────────────────────────────────────────────────────────────
-  // 1. 🎙️ Celebrity & Athlete Voice Intent (صوت المشاهير والرياضيين والأنمي)
-  // "قول بصوت ميسي", "اتكلم بصوت ميسي", "بصوت غوكو", "بصوت ايمينيم", "بصوت ذا روك", "بصوت نيمار", "بصوت مبابي", "بصوت كانيه", "بصوت دريك", "بصوت سنوب"
+  // 1. 🎙️ Celebrity & Natural Voice Intent (صوت المشاهير والذكاء الاصطناعي الطبيعي)
   // ─────────────────────────────────────────────────────────────
+  // a) "بصوتك", "اتكلم بصوتك", "قول بصوتك", "رد بصوتك"
+  const botVoicePattern = /^(?:قول|اتكلم|انطق|رد|احكي|غرد|تكلم)?\s*(?:لي\s+|ليا\s+|معايا\s+|علي\s+|عليا\s+)?(?:بصوتك|صوتك|بالصوت)\s*(.*)$/i;
+  const botVoiceMatch = norm.match(botVoicePattern);
+  if (botVoiceMatch) {
+    let cleanText = cleanUserInput(rawText)
+      .replace(/^(?:قول|اتكلم|انطق|رد|احكي|غرد|تكلم)?\s*(?:لي\s+|ليا\s+|معايا\s+|علي\s+|عليا\s+)?(?:بصوتك|صوتك|بالصوت)\s*/i, '')
+      .trim();
+    return {
+      type: 'celebrity_tts',
+      voice: 'adam',
+      character: 'adam',
+      text: cleanText || 'يا هلا بيك يا صاحبي! أنا استرو، اتفضل أؤمرني وسامعك بكل وضوح',
+    };
+  }
+
+  // b) صوت المشاهير والرياضيين: "قول بصوت ميسي", "اتكلم بصوت ميسي", "بصوت غوكو", "بصوت ادم"
   const ttsPrefixRegex = /^(?:قول|اتكلم|انطق|احكي|غرد|say|speak)?\s*(?:لي\s+|ليا\s+)?(?:بصوت|صوت|in(?:\s+the)?\s+voice\s+of|as)\s+(.+)$/i;
   const ttsPrefixMatch = norm.match(ttsPrefixRegex);
   if (ttsPrefixMatch) {
@@ -138,22 +202,54 @@ export function detectIntent(rawText, m = null) {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 2. 🎨 Image Editing Intent (تعديل وتغيير الصور بالذكاء الاصطناعي)
-  // Triggers: "عدل الصورة", "عدلي الصورة", "غير الصورة", "خلي الصورة", "عدل دي", "غير الخلفية لـ", "edit image", "modify image", "change image"
+  // 2. ✂️ Remove Background Intent (إزالة وتفريغ خلفية الصورة)
+  // ─────────────────────────────────────────────────────────────
+  const removeBgTriggers = [
+    'شيل الخلفية', 'شيل الخلفيه', 'ازالة الخلفية', 'ازالة الخلفيه', 'ازل الخلفية', 'ازل الخلفيه',
+    'مسح الخلفية', 'مسح الخلفيه', 'فرغ الصورة', 'فرغ الصوره', 'فرغ دي', 'فرغلي دي', 'تفريغ الصورة', 'تفريغ الصوره',
+    'شيل خلفية الصورة', 'شيل خلفيه الصوره', 'شيل خلفية دي',
+    'remove bg', 'remove background', 'erase background', 'clear background',
+  ];
+  const hasRemoveBgTrigger = removeBgTriggers.some((tr) => norm.includes(normalizeText(tr)));
+  if (hasRemoveBgTrigger) {
+    return {
+      type: 'remove_bg',
+      hasImage: hasAttachedImage(m),
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 3. 🎨 Image Editing Intent (تعديل وتغيير الصور بالذكاء الاصطناعي بدون بادئة)
   // ─────────────────────────────────────────────────────────────
   const imageEditTriggers = [
-    'عدل الصورة', 'عدلي الصورة', 'عدللي الصورة', 'عدل لي الصورة', 'عدل في الصورة', 'عدل علي الصورة', 'عدل على الصورة',
-    'غير الصورة', 'غيرلي الصورة', 'غير لي الصورة',
-    'خلي الصورة', 'خليلي الصورة', 'خلي لي الصورة',
-    'عدل دي', 'عدلي دي', 'عدللي دي', 'عدل لي دي',
-    'غير الخلفية لـ', 'غير الخلفيه لـ', 'غير الخلفية ل', 'غير الخلفيه ل', 'غير الخلفية', 'غير الخلفيه', 'غير خلفية لـ', 'غير خلفيه لـ', 'غير خلفية ل', 'غير خلفيه ل', 'غير خلفية', 'غير خلفيه',
+    'عدل الصورة', 'عدلي الصورة', 'عدللي الصورة', 'عدل لي الصورة', 'عدل في الصورة', 'عدل علي الصورة', 'عدل على الصورة', 'عدل ع الصورة',
+    'عدل الصوره', 'عدلي الصوره', 'عدللي الصوره', 'عدل لي الصوره', 'عدل في الصوره', 'عدل علي الصوره', 'عدل على الصوره', 'عدل ع الصوره',
+    'غير الصورة', 'غيرلي الصورة', 'غير لي الصورة', 'غير الصوره', 'غيرلي الصوره', 'غير لي الصوره',
+    'خلي الصورة', 'خليلي الصورة', 'خلي لي الصورة', 'خلي الصوره', 'خليلي الصوره', 'خلي لي الصوره',
+    'عدل دي', 'عدلي دي', 'عدللي دي', 'عدل لي دي', 'عدل ديه', 'عدلي ديه',
+    'غير دي', 'غيرلي دي', 'غير لي دي',
+    'عدلها', 'عدليها', 'عدلهالي', 'عدلها لي', 'غيرها', 'غيرليها', 'غيرهالي',
+    'ظبط الصورة', 'ظبطلي الصورة', 'ظبط الصوره', 'ظبطلي الصوره', 'ظبط دي', 'ظبطلي دي',
+    'عايز اعدل الصورة', 'عاوز اعدل الصورة', 'بدي اعدل الصورة', 'محتاج اعدل الصورة',
+    'عايز اعدل الصوره', 'عاوز اعدل الصوره', 'بدي اعدل الصوره',
+    'تعديل الصورة', 'تعديل الصوره', 'تعديل صورة', 'تعديل صوره',
+    'حول الصورة', 'حول الصوره', 'حولها', 'حول دي',
+    'غير الخلفية لـ', 'غير الخلفيه لـ', 'غير الخلفية ل', 'غير الخلفيه ل', 'غير الخلفية', 'غير الخلفيه',
+    'غير خلفية لـ', 'غير خلفيه لـ', 'غير خلفية ل', 'غير خلفيه ل', 'غير خلفية', 'غير خلفيه',
+    'بدل الخلفية', 'بدل الخلفيه',
     'edit image', 'edit the image', 'edit this image', 'edit photo', 'edit the photo', 'edit picture',
     'modify image', 'modify the image', 'modify photo', 'modify picture',
     'change image', 'change the image', 'change photo', 'change picture',
   ];
 
+  const hasImageAttached = hasAttachedImage(m);
   const hasImageEditTrigger = imageEditTriggers.some((tr) => norm.includes(normalizeText(tr)));
-  if (hasImageEditTrigger) {
+  const contextualEditMatch = hasImageAttached && (
+    /^(?:خليها|خلوها|حولها|غيرها|عدلها|ظبطها|بدلها|ضيف|حط|make it|turn into)\s+(.+)/i.test(norm) ||
+    /^(?:انمي|أنمي|كرتون|فضاء|رسمة|رسمه|3d|neon|anime|cyberpunk)/i.test(norm)
+  );
+
+  if (hasImageEditTrigger || contextualEditMatch) {
     let prompt = cleanUserInput(rawText);
     for (const tr of imageEditTriggers) {
       const reg = new RegExp(tr.replace(/[\s\-_]+/g, '[\\s\\-_]+'), 'gi');
@@ -168,8 +264,8 @@ export function detectIntent(rawText, m = null) {
 
     return {
       type: 'image_edit',
-      prompt,
-      hasImage: hasAttachedImage(m),
+      prompt: prompt || 'تعديل وتحسين الصورة بالذكاء الاصطناعي',
+      hasImage: hasImageAttached,
     };
   }
 
@@ -461,22 +557,51 @@ export async function dispatchToolAction(sock, m, text, profile) {
   console.log(`🎯 [Tool-Caller] تم اكتشاف أداة ذكية: ${intent.type} للرسالة: "${text.slice(0, 50)}"`);
 
   // ─────────────────────────────────────────────────────────────
-  // a) Image Editing Intent (تعديل الصور بالذكاء الاصطناعي)
+  // ✂️ Remove Background Intent (إزالة وتفريغ خلفية الصورة)
+  // ─────────────────────────────────────────────────────────────
+  if (intent.type === 'remove_bg') {
+    const imageUrl = await extractImageUrl(m);
+    if (!imageUrl) {
+      await sendText(
+        sock,
+        m.jid,
+        '🖼️ ابعتلي الصورة أو رد عليها واكتب "شيل الخلفية" عشان أفرغهالك فوراً يا فنان! ✂️✨',
+      );
+      return true;
+    }
+
+    await sendText(sock, m.jid, '✂️ حاضر يا سيدي، بثواني بفرغلك الصورة وبشيل الخلفية... ⏳');
+    try {
+      const transparentUrl = await api.removeBg(imageUrl);
+      if (!transparentUrl) throw new Error('فشل سيرفر تفريغ الصورة');
+      await sendImage(sock, m.jid, transparentUrl, '✂️ *تم تفريغ الصورة وإزالة الخلفية بنجاح!*');
+      await sendQuickReplies(sock, m.jid, {
+        title: '✂️ خيارات الصورة المفرغة',
+        text: 'تحب تعمل إيه بالصورة المفرغة يا فنان؟ 👇',
+        buttons: [
+          { label: '🎬 تحويل لفيديو', id: 'اعمللي فيديو سينمائي' },
+          { label: '🎨 تعديل بالذكاء الاصطناعي', id: 'عدلي الصورة دي' },
+        ],
+      });
+    } catch (err) {
+      console.warn('⚠️ فشل تفريغ الصورة:', err.message);
+      await sendText(sock, m.jid, '🥴 معلش يا فنان، تعذر تفريغ خلفية الصورة دي حالياً، اتأكد إن الصورة واضحة وجرب تاني!');
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // a) Image Editing Intent (تعديل الصور بالذكاء الاصطناعي بدون بادئة)
   // ─────────────────────────────────────────────────────────────
   if (intent.type === 'image_edit') {
-    let imageUrl = null;
-    try {
-      imageUrl = (await imageToUrl(m).catch(() => null)) || (m.quoted ? await imageToUrl(m.quoted).catch(() => null) : null);
-    } catch {
-      imageUrl = null;
-    }
+    const imageUrl = await extractImageUrl(m);
 
     // إذا لم تكن هناك صورة مرفقة أو مقتبسة
     if (!imageUrl) {
       await sendText(
         sock,
         m.jid,
-        '🖼️ ابعتلي الصورة أو رد عليها بطلب التعديل يا فنان عشان أعدلهالك بالذكاء الاصطناعي! 🎨✨\nمثال: رد على صورتك واكتب "عدل الصورة خليها أنمي"',
+        '🖼️ ابعتلي الصورة أو رد عليها بطلب التعديل يا فنان عشان أعدلهالك بالذكاء الاصطناعي! 🎨✨\nمثال: رد على صورتك واكتب "عدل الصورة خليها أنمي" أو "حولها لـ 3d"',
       );
       return true;
     }
@@ -504,6 +629,7 @@ export async function dispatchToolAction(sock, m, text, profile) {
         buttons: [
           { label: '🎬 تحويل إلى فيديو', id: `اعمللي فيديو ${cleanPrompt}` },
           { label: '🎨 رسم نسخة ثانية', id: `ارسم لي ${cleanPrompt}` },
+          { label: '🔄 تعديل آخر', id: `عدلي الصورة ${cleanPrompt}` },
         ],
       });
     } catch (err) {
