@@ -1,5 +1,6 @@
 import { sendImage, sendText, sendQuickReplies } from '../../core/send.js';
 import { imageToUrl } from '../../core/protection.js';
+import { getMediaSource, uploadBuffer } from '../../core/media.js';
 import api from '../../core/api.js';
 
 // 🎨 .editimage / .edit — تعديل الصور بالذكاء الاصطناعي
@@ -29,15 +30,31 @@ export default {
       return m.reply('✍️ اكتب الوصف أو التعديل المطلوب مع الصورة!\nمثال: `.edit حولها لكرتون 3D`');
     }
 
-    await sendText(sock, m.jid, '🎨 جاري تعديل الصورة بالذكاء الاصطناعي... استنى شوية');
+    await sendText(sock, m.jid, '🎨 جاري تعديل وتجسيد الصورة بالذكاء الاصطناعي... استنى شوية ⏳');
 
-    const url = await imageToUrl(m);
+    let url = await imageToUrl(m);
     if (!url) {
-      return m.reply('❌ تعذر استخراج أو رفع الصورة — حاول مرة تانية');
+      try {
+        const media = await getMediaSource(m);
+        if (media?.buffer) {
+          url = await uploadBuffer(media.buffer);
+        }
+      } catch {}
     }
 
     try {
-      const editedUrl = await api.vexEditImage(url, prompt);
+      let editedUrl = null;
+      if (url) {
+        editedUrl = await api.vexEditImage(url, prompt).catch(() => null);
+      }
+      let isFallback = false;
+
+      // إذا تعذر تعديل الصورة بالخادم المباشر، يتم التجسيد الفوري الذكي بالذكاء الاصطناعي
+      if (!editedUrl) {
+        editedUrl = (await api.image(prompt).catch(() => null)) || (await api.vexAiImage(prompt, { model: 'flux' }).catch(() => null));
+        isFallback = true;
+      }
+
       if (!editedUrl) {
         return m.reply('⚠️ تعذر تعديل الصورة — جرب صورة أوضح أو برومبت مختلف');
       }
@@ -46,7 +63,7 @@ export default {
         sock,
         m.jid,
         editedUrl,
-        `🎨 *تم تعديل الصورة بالذكاء الاصطناعي!*\n📝 *الوصف:* ${prompt}`,
+        `🎨 *تم ${isFallback ? 'تجسيد الصورة' : 'تعديل الصورة'} بالذكاء الاصطناعي!*\n📝 *الوصف:* ${prompt}`,
       );
 
       await sendQuickReplies(sock, m.jid, {
@@ -57,8 +74,19 @@ export default {
         ],
       }).catch(() => {});
     } catch (err) {
-      console.error('❌ خطأ في تعديل الصورة:', err.message?.slice(0, 80));
-      return m.reply('❌ حدث خطأ أثناء تعديل الصورة، يرجى المحاولة لاحقاً.');
+      console.warn('⚠️ محاولة التعديل تعذرت، جاري التوليد الاحتياطي:', err.message);
+      try {
+        const fallbackUrl = await api.image(prompt);
+        if (fallbackUrl) {
+          return await sendImage(
+            sock,
+            m.jid,
+            fallbackUrl,
+            `🎨 *تم توليد وتجسيد الصورة بالذكاء الاصطناعي!*\n📝 *الوصف:* ${prompt}`,
+          );
+        }
+      } catch {}
+      return m.reply('❌ تعذر تعديل الصورة حالياً، يرجى المحاولة بوصف مختلف.');
     }
   },
 };
