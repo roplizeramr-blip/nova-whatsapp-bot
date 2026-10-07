@@ -5,6 +5,24 @@ import { speak } from './tts.js';
 import { imageToUrl } from './protection.js';
 import { getMediaSource, uploadBuffer } from './media.js';
 
+// 🎮 استيراد الألعاب والأدوات للتشغيل الذاتي السلس (Autonomous Agent Loop)
+import xoCmd from '../commands/games/xo.js';
+import guessCmd from '../commands/games/guess.js';
+import quizCmd from '../commands/games/quiz.js';
+import mathCmd from '../commands/games/math.js';
+import rpsCmd from '../commands/games/rps.js';
+import truthDareCmd from '../commands/games/truth-dare.js';
+import hangCmd from '../commands/games/hang.js';
+import stickerCmd from '../commands/tools/sticker.js';
+import translateCmd from '../commands/tools/translate.js';
+import reminderCmd from '../commands/tools/reminder.js';
+import checknumCmd from '../commands/tools/checknum.js';
+import bankCmd from '../commands/economy/bank.js';
+import topCmd from '../commands/economy/top.js';
+import menuCmd from '../commands/general/menu.js';
+import pingCmd from '../commands/general/ping.js';
+import jokeCmd from '../commands/fun/joke.js';
+
 // 🤖 AI Tool Calling & Intent Orchestrator لـ Astro / Nova
 // يكتشف نوايا وأفعال المستخدم الطبيعية في المحادثة وينفذ الأدوات التفاعلية فوراً
 
@@ -535,6 +553,158 @@ export function detectIntent(rawText, m = null) {
       type: 'song_download',
       query,
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 10. 🎮 Games Intent (تشغيل الألعاب التفاعلية بدون بادئة)
+  // ─────────────────────────────────────────────────────────────
+  // a) XO (إكس أو)
+  if (
+    /^(?:شغل|ابدا|العب|نلعب|عايز\s+العب)?\s*(?:لعب[ةه]\s+)?(?:xo|اكس\s*او|اكس\s*و\s*او)$/i.test(norm) ||
+    norm === 'اكس او' || norm === 'لعبه xo' || norm === 'لعبة xo' ||
+    (norm.includes('xo') && (norm.includes('لعب') || norm.includes('تحدي') || norm.includes('شغل')))
+  ) {
+    return { type: 'game_xo' };
+  }
+
+  // b) Guess (التخمين)
+  if (
+    /^(?:شغل|ابدا|العب|نلعب|عايز\s+العب)?\s*(?:لعب[ةه]\s+)?(?:التخمين|تخمين|خمن\s+الرقم|guess)$/i.test(norm) ||
+    norm.includes('تخمين') || norm.includes('خمن الرقم')
+  ) {
+    return { type: 'game_guess' };
+  }
+
+  // c) Quiz (المسابقات والحزازير)
+  if (
+    /^(?:شغل|ابدا|العب|نلعب|عايز\s+العب)?\s*(?:لعب[ةه]\s+)?(?:مسابق[ةه]|المسابقات|حزور[ةه]|فزور[ةه]|اسئل[ةه]|quiz|مسابق[ةه]\s+ثقافي[ةه])$/i.test(norm) ||
+    norm.includes('حزور') || norm.includes('فزور') || norm.includes('مسابق') || norm.includes('سؤال مسابق')
+  ) {
+    return { type: 'game_quiz' };
+  }
+
+  // d) Math (الحساب والرياضيات)
+  if (
+    /^(?:شغل|ابدا|العب|نلعب|عايز\s+العب)?\s*(?:لعب[ةه]\s+)?(?:رياضيات|الحساب|مسال[ةه]\s+رياضي[ةه]|تحدي\s+حساب|math)$/i.test(norm) ||
+    norm.includes('تحدي حساب') || (norm.includes('مسال') && norm.includes('رياض'))
+  ) {
+    return { type: 'game_math' };
+  }
+
+  // e) RPS (حجر ورقة مقص)
+  if (
+    (norm.includes('حجر') && norm.includes('ورق') && norm.includes('مقص')) ||
+    /^(?:شغل|ابدا|العب|نلعب)?\s*(?:لعب[ةه]\s+)?rps$/i.test(norm)
+  ) {
+    return { type: 'game_rps' };
+  }
+
+  // f) Truth or Dare (صراحة وجرأة)
+  if (
+    norm.includes('صراح') ||
+    (norm.includes('حقيق') && norm.includes('تحدي')) ||
+    (norm.includes('حقيق') && norm.includes('جراه')) ||
+    norm.includes('truth')
+  ) {
+    return { type: 'game_truth_dare' };
+  }
+
+  // g) Hangman (المشنقة)
+  if (
+    norm.includes('مشنق') ||
+    norm.includes('hangman')
+  ) {
+    return { type: 'game_hang' };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 11. 🏷️ Sticker Intent (صناعة الملصقات التلقائية)
+  // ─────────────────────────────────────────────────────────────
+  const stickerTriggers = [
+    'اعمللي استيكر', 'اعملي استيكر', 'اعمل استيكر', 'اعمللي ستيكر', 'اعملي ستيكر', 'اعمل ستيكر',
+    'حول دي استيكر', 'حول دي ستيكر', 'حولها استيكر', 'حولها ستيكر',
+    'استيكر من دي', 'ستيكر من دي', 'استيكر من الصورة', 'ستيكر من الصوره',
+    'اعمللي ملصق', 'اعملي ملصق', 'اعمل ملصق', 'حول لملصق', 'حول دي لملصق', 'حولها ملصق',
+    'make sticker', 'create sticker',
+  ];
+  if (
+    stickerTriggers.some((t) => norm.includes(normalizeText(t))) ||
+    norm === 'استيكر' || norm === 'ستيكر' || norm === 'ملصق'
+  ) {
+    return { type: 'sticker_make' };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 12. 🌐 Translation Intent (الترجمة الفورية)
+  // ─────────────────────────────────────────────────────────────
+  const transPattern = /^(?:ترجملي|ترجم\s+لي|ترجم)\s+(.+)$/i;
+  const transMatch = norm.match(transPattern);
+  if (transMatch) {
+    let remainder = cleanUserInput(rawText).replace(/^(?:ترجملي|ترجم\s+لي|ترجم)\s*/i, '').trim();
+    let targetLang = 'ar';
+    const langDetect = remainder.match(/^(?:لـ|ل|إلى|الي|to\s+)?(انجليزي|إنجليزي|عربي|فرنساوي|فرنسي|تركي|الماني|ألماني|روسي|اسباني|إسباني|en|ar|fr|tr|de|ru|es)\s*[:،,-]?\s*(.+)$/i);
+    if (langDetect) {
+      const l = langDetect[1].toLowerCase();
+      if (/انجليزي|en/i.test(l)) targetLang = 'en';
+      else if (/عربي|ar/i.test(l)) targetLang = 'ar';
+      else if (/فرنساوي|فرنسي|fr/i.test(l)) targetLang = 'fr';
+      else if (/تركي|tr/i.test(l)) targetLang = 'tr';
+      else if (/الماني|ألماني|de/i.test(l)) targetLang = 'de';
+      else if (/روسي|ru/i.test(l)) targetLang = 'ru';
+      else if (/اسباني|إسباني|es/i.test(l)) targetLang = 'es';
+      remainder = langDetect[2].trim();
+    }
+    return {
+      type: 'translate_text',
+      text: remainder,
+      lang: targetLang,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 13. ⏰ Reminder Intent (التذكير بالمواعيد والمهام)
+  // ─────────────────────────────────────────────────────────────
+  const reminderPattern = /^(?:فكرني|ذكرني|نبهني)\s+(.+)$/i;
+  const reminderMatch = norm.match(reminderPattern);
+  if (reminderMatch) {
+    return {
+      type: 'set_reminder',
+      rawReminder: cleanUserInput(rawText).replace(/^(?:فكرني|ذكرني|نبهني)\s*/i, '').trim(),
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 14. 📱 Check Phone Number Intent (فحص الأرقام واستخراج الهوية)
+  // ─────────────────────────────────────────────────────────────
+  const checkNumPattern = /(?:مين\s+صاحب\s+الرقم|افحص\s+الرقم|فحص\s+رقم|بيانات\s+الرقم|معلومات\s+الرقم|رقم)\s+(\+?\d[\d\s-]{6,16})/i;
+  const checkNumMatch = rawText.match(checkNumPattern);
+  if (checkNumMatch) {
+    return {
+      type: 'check_number',
+      phone: checkNumMatch[1].replace(/\D/g, ''),
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 15. 💰 Quick Status & Economy Utilities (رصيدي، ترتيبي، القائمة، البينج، النكت)
+  // ─────────────────────────────────────────────────────────────
+  if (/^(?:رصيدي\s*كام|معايا\s*كام|فلوسي\s*كام|حسابي\s*كام|كم\s*رصيدي)$/i.test(norm)) {
+    return { type: 'quick_bank' };
+  }
+  if (/^(?:ترتيبي\s*ايه|توب\s*البوت|مين\s*اعلى\s*رصيد|لوحة\s*الشرف|المتصدرين)$/i.test(norm)) {
+    return { type: 'quick_top' };
+  }
+  if (/^(?:الاوامر|المنيو|قائمة\s*الاوامر|وريني\s*الاوامر|افتح\s*المنيو|menu|help)$/i.test(norm)) {
+    return { type: 'quick_menu' };
+  }
+  if (/^(?:البينج\s*كام|سرعة\s*البوت|سرعتك\s*كام|فحص\s*البينج|ping)$/i.test(norm)) {
+    return { type: 'quick_ping' };
+  }
+  if (
+    norm.includes('نكت') ||
+    /^(?:قول|احكي|سمعني)?\s*(?:لي\s+|ليا\s+)?(?:نكت[ةه]|فزور[ةه]|حاج[ةه]\s+تضحك)$/i.test(norm)
+  ) {
+    return { type: 'quick_joke' };
   }
 
   return null;
@@ -1149,6 +1319,181 @@ export async function dispatchToolAction(sock, m, text, profile) {
     } catch (err) {
       console.error('❌ فشل جلب كلمات الأغنية:', err.message);
       await sendText(sock, m.jid, '🥴 حصل خطأ أثناء جلب كلمات الأغنية، جرب تاني!');
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 🎮 Games Execution (تشغيل الألعاب التفاعلية فورياً بدون بادئة)
+  // ─────────────────────────────────────────────────────────────
+  if (intent.type === 'game_xo') {
+    try {
+      await xoCmd.execute(sock, m, ['new']);
+    } catch (err) {
+      console.error('❌ فشل تشغيل XO الذاتي:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل لعبة XO، جرب تاني!');
+    }
+    return true;
+  }
+
+  if (intent.type === 'game_guess') {
+    try {
+      await guessCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل تشغيل لعبة التخمين:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل لعبة التخمين، جرب تاني!');
+    }
+    return true;
+  }
+
+  if (intent.type === 'game_quiz') {
+    try {
+      await quizCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل تشغيل المسابقة:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل المسابقة، جرب تاني!');
+    }
+    return true;
+  }
+
+  if (intent.type === 'game_math') {
+    try {
+      await mathCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل تشغيل تحدي الرياضيات:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل تحدي الحساب، جرب تاني!');
+    }
+    return true;
+  }
+
+  if (intent.type === 'game_rps') {
+    try {
+      await rpsCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل تشغيل حجر ورقة مقص:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل حجر ورقة مقص، جرب تاني!');
+    }
+    return true;
+  }
+
+  if (intent.type === 'game_truth_dare') {
+    try {
+      await truthDareCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل تشغيل صراحة وجرأة:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل صراحة وجرأة، جرب تاني!');
+    }
+    return true;
+  }
+
+  if (intent.type === 'game_hang') {
+    try {
+      await hangCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل تشغيل لعبة المشنقة:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل لعبة المشنقة، جرب تاني!');
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 🏷️ Sticker Execution (صناعة الملصقات)
+  // ─────────────────────────────────────────────────────────────
+  if (intent.type === 'sticker_make') {
+    try {
+      await stickerCmd.execute(sock, m);
+    } catch (err) {
+      console.error('❌ فشل صناعة الملصق التلقائي:', err.message);
+      await sendText(sock, m.jid, '🖼️ رد على أي صورة أو فيديو قصير واطلب "اعمللي استيكر" وهجهزهولك فوراً! ✨');
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 🌐 Translation Execution (الترجمة الفورية)
+  // ─────────────────────────────────────────────────────────────
+  if (intent.type === 'translate_text') {
+    try {
+      const args = [intent.lang, intent.text].filter(Boolean);
+      await translateCmd.execute(sock, m, args);
+    } catch (err) {
+      console.error('❌ فشل الترجمة التلقائية:', err.message);
+      await sendText(sock, m.jid, '🥴 تعذرت الترجمة حالياً، اتأكد من النص وجرب تاني!');
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // ⏰ Reminder Execution (التذكيرات)
+  // ─────────────────────────────────────────────────────────────
+  if (intent.type === 'set_reminder') {
+    try {
+      const args = intent.rawReminder.split(/\s+/).filter(Boolean);
+      await reminderCmd.execute(sock, m, args);
+    } catch (err) {
+      console.error('❌ فشل التذكير التلقائي:', err.message);
+      await sendText(sock, m.jid, '⏰ اكتب التذكير كده يا غالي: "فكرني أذاكر بعد ساعة" أو "ذكرني بالميعاد بعد 10 دقايق"');
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 📱 Check Number Execution (فحص الأرقام)
+  // ─────────────────────────────────────────────────────────────
+  if (intent.type === 'check_number') {
+    try {
+      await checknumCmd.execute(sock, m, [intent.phone]);
+    } catch (err) {
+      console.error('❌ فشل فحص الرقم التلقائي:', err.message);
+      await sendText(sock, m.jid, '🥴 تعذر فحص الرقم حالياً، اتأكد من صحته وجرب تاني!');
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 💰 Quick Utilities Execution (رصيدي، ترتيبي، القائمة، البينج، النكت)
+  // ─────────────────────────────────────────────────────────────
+  if (intent.type === 'quick_bank') {
+    try {
+      await bankCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل عرض الرصيد:', err.message);
+    }
+    return true;
+  }
+
+  if (intent.type === 'quick_top') {
+    try {
+      await topCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل عرض قائمة المتصدرين:', err.message);
+    }
+    return true;
+  }
+
+  if (intent.type === 'quick_menu') {
+    try {
+      await menuCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل عرض القائمة:', err.message);
+    }
+    return true;
+  }
+
+  if (intent.type === 'quick_ping') {
+    try {
+      await pingCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل فحص البينج:', err.message);
+    }
+    return true;
+  }
+
+  if (intent.type === 'quick_joke') {
+    try {
+      await jokeCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل إلقاء النكتة:', err.message);
     }
     return true;
   }
