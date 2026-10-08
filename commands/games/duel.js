@@ -14,15 +14,22 @@ const WINS = [
 // (أو مات النت عنده) الجروب يفضل متقفل على "فيه مبارزة شغالة" للأبد.
 const STALE_MS = 30 * 60 * 1000;
 
-function cell(v) {
-  return v === 'X' ? '❌' : v === 'O' ? '⭕' : '⬜';
+const NUM_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
+
+function cell(board, i) {
+  const v = board[i];
+  if (v === 'X') return '❌';
+  if (v === 'O') return '⭕';
+  return NUM_EMOJIS[i] || '▫️';
 }
 
 function render(board) {
   return [
-    `${cell(board[0])} ${cell(board[1])} ${cell(board[2])}`,
-    `${cell(board[3])} ${cell(board[4])} ${cell(board[5])}`,
-    `${cell(board[6])} ${cell(board[7])} ${cell(board[8])}`,
+    ` ${cell(board, 0)}  │  ${cell(board, 1)}  │  ${cell(board, 2)} `,
+    `─────┼─────┼─────`,
+    ` ${cell(board, 3)}  │  ${cell(board, 4)}  │  ${cell(board, 5)} `,
+    `─────┼─────┼─────`,
+    ` ${cell(board, 6)}  │  ${cell(board, 7)}  │  ${cell(board, 8)} `,
   ].join('\n');
 }
 
@@ -62,7 +69,10 @@ export default {
     if (!m.isGroup) return m.reply('المبارزة في الجروبات بس — عشان يكون في جمهور 😄');
     const all = duels();
     const me = m.identityKey ?? m.sender;
-    const sub = (args.find((a) => /^(yes|no|mv-|cancel|stop)/.test(a)) ?? '').toLowerCase();
+    let sub = (args.find((a) => /^(yes|no|mv-|cancel|stop|p?[1-9]$)/i.test(a)) ?? '').toLowerCase();
+    if (/^p?[1-9]$/.test(sub)) {
+      sub = `mv-${sub.replace('p', '')}`;
+    }
 
     // 🧹 تنظيف المبارزات المهملة — اللي فات عليها الوقت
     const existing = all[m.jid];
