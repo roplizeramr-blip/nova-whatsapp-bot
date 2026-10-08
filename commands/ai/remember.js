@@ -1,12 +1,12 @@
 import { sendQuickReplies, sendText } from '../../core/send.js';
 import { rememberMemory } from '../../core/memory.js';
 
-// 🧠 .فكر — حفظ معلومة أو ذكرى شخصية في عقل استرو مباشرة
+// 🧠 .تذكر — حفظ معلومة أو ذكرى شخصية في عقل استرو مباشرة
 export default {
-  name: 'فكر',
-  aliases: ['احفظ', 'تذكر', 'اتذكر', 'remember'],
-  description: 'حفظ معلومة أو ذكرى في عقل استرو — .فكر أنا بحب القهوة السادة',
-  usage: '.فكر <المعلومة اللي عايز استرو يفتكرها>',
+  name: 'تذكر',
+  aliases: ['افتكر', 'احفظ', 'اتذكر', 'remember', 'حفظ_ذكرى'],
+  description: 'حفظ معلومة أو ذكرى في عقل استرو — .تذكر أنا بحب القهوة السادة',
+  usage: '.تذكر <المعلومة اللي عايز استرو يفتكرها>',
   async execute(sock, m, args, ctx) {
     const text = args.join(' ').trim();
     const key = m.identityKey ?? m.sender;
