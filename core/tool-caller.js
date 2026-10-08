@@ -1363,7 +1363,7 @@ export async function dispatchToolAction(sock, m, text, profile) {
 
       const buttons = results.slice(0, 3).map((r, i) => ({
         label: `🎬 تحميل ${i + 1}`,
-        id: `.song dl-${r.index ?? i}` agencies?.[0] || `.song dl-${i}`,
+        id: `.song dl-${r.index ?? i}`,
       }));
 
       const summary = results
