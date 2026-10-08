@@ -13,6 +13,8 @@ import mathCmd from '../commands/games/math.js';
 import rpsCmd from '../commands/games/rps.js';
 import truthDareCmd from '../commands/games/truth-dare.js';
 import hangCmd from '../commands/games/hang.js';
+import scrambleCmd from '../commands/games/scramble.js';
+import flagsCmd from '../commands/games/flags.js';
 import stickerCmd from '../commands/tools/sticker.js';
 import translateCmd from '../commands/tools/translate.js';
 import reminderCmd from '../commands/tools/reminder.js';
@@ -617,6 +619,24 @@ export function detectIntent(rawText, m = null) {
     return { type: 'game_hang' };
   }
 
+  // h) Scramble (ترتيب الحروف)
+  if (
+    norm.includes('ترتيب حروف') || norm.includes('ترتيب الحروف') ||
+    norm.includes('رتب الحروف') || norm.includes('فكك وركب') ||
+    norm.includes('scramble')
+  ) {
+    return { type: 'game_scramble' };
+  }
+
+  // i) Flags (خمن علم الدولة)
+  if (
+    norm.includes('خمن العلم') || norm.includes('لعبة الاعلام') ||
+    norm.includes('لعبة العلم') || norm.includes('تحدي الاعلام') ||
+    norm.includes('علم الدولة') || norm.includes('flags')
+  ) {
+    return { type: 'game_flags' };
+  }
+
   // ─────────────────────────────────────────────────────────────
   // 11. 🏷️ Sticker Intent (صناعة الملصقات التلقائية)
   // ─────────────────────────────────────────────────────────────
@@ -726,6 +746,7 @@ export async function dispatchToolAction(sock, m, text, profile) {
 
   console.log(`🎯 [Tool-Caller] تم اكتشاف أداة ذكية: ${intent.type} للرسالة: "${text.slice(0, 50)}"`);
 
+  // ─────────────────────────────────────────────────────────────
   // ─────────────────────────────────────────────────────────────
   // ✂️ Remove Background Intent (إزالة وتفريغ خلفية الصورة)
   // ─────────────────────────────────────────────────────────────
@@ -1392,6 +1413,26 @@ export async function dispatchToolAction(sock, m, text, profile) {
     } catch (err) {
       console.error('❌ فشل تشغيل لعبة المشنقة:', err.message);
       await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل لعبة المشنقة، جرب تاني!');
+    }
+    return true;
+  }
+
+  if (intent.type === 'game_scramble') {
+    try {
+      await scrambleCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل تشغيل لعبة ترتيب الحروف:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل لعبة ترتيب الحروف، جرب تاني!');
+    }
+    return true;
+  }
+
+  if (intent.type === 'game_flags') {
+    try {
+      await flagsCmd.execute(sock, m, []);
+    } catch (err) {
+      console.error('❌ فشل تشغيل لعبة الأعلام:', err.message);
+      await sendText(sock, m.jid, '🥴 حصل خطأ في تشغيل لعبة الأعلام، جرب تاني!');
     }
     return true;
   }
