@@ -121,8 +121,7 @@ export async function startBot() {
     aliases[String(lid)] = String(pn).includes('@') ? String(pn) : `${String(pn).split(':')[0]}@s.whatsapp.net`;
     const target = aliases[String(lid)];
     aliases[target] = target;
-    db.set('identities', aliases);
-    clearCanonicalCache(); // 🆔 خريطة الهويات اتحدثت — الكاش القديم ميصلحش
+    db.set('identities', aliases);\n    clearCanonicalCache(); // 🆔 خريطة الهويات اتحدثت — الكاش القديم ميصلحش
   });
 
   // 📊 الداشبورد: قايمة الجروبات الحية (مع كاش وحماية من التعليق)

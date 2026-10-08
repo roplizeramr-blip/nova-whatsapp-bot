@@ -182,15 +182,7 @@ export async function mainMenu(sock, jid, extra = '', ctx = null) {
   ];
 
   const sections = [
-    {
-      title: '📂 تصفح أقسام الأوامر الـ 11',
-      rows: SECTIONS.map((s) => ({
-        header: `${s.emoji} ${s.label}`,
-        title: s.label,
-        description: s.desc.slice(0, 50),
-        id: `.menu ${s.id}`,
-      })),
-    },
+    {\n      title: '📂 تصفح أقسام الأوامر الـ 11',\n      rows: SECTIONS.map((s) => ({\n        header: `${s.emoji} ${s.label}`,\n        title: s.label,\n        description: s.desc.slice(0, 50),\n        id: `.menu ${s.id}`,\n      })),\n    },
   ];
 
   return send(sock, jid, {
