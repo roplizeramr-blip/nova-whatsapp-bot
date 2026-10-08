@@ -108,7 +108,8 @@ export async function getMediaSource(m) {
     try {
       const buffer = await streamToBuffer(await downloadContentFromMessage(qImg, 'image'));
       if (buffer.length > 500) return { buffer, kind: 'image' };
-    } catch {}\n    if (qImg.jpegThumbnail) {
+    } catch {}
+    if (qImg.jpegThumbnail) {
       const thumb = Buffer.isBuffer(qImg.jpegThumbnail)
         ? qImg.jpegThumbnail
         : Buffer.from(qImg.jpegThumbnail);
@@ -127,12 +128,14 @@ export async function getMediaSource(m) {
     try {
       const buffer = await streamToBuffer(await downloadContentFromMessage(qVid, 'video'));
       return { buffer, kind: 'video' };
-    } catch {}\n  }
+    } catch {}
+  }
 
   if (quoted?.stickerMessage) {
     try {
       return { buffer: await streamToBuffer(await downloadContentFromMessage(quoted.stickerMessage, 'sticker')), kind: 'sticker' };
-    } catch {}\n  }
+    } catch {}
+  }
 
   // 2) فحص الرسالة الحالية نفسها
   const mImg =
@@ -146,7 +149,8 @@ export async function getMediaSource(m) {
     try {
       const buffer = await streamToBuffer(await downloadContentFromMessage(mImg, 'image'));
       if (buffer.length > 500) return { buffer, kind: 'image' };
-    } catch {}\n  }
+    } catch {}
+  }
 
   const mVid =
     m.message?.videoMessage ||
@@ -159,7 +163,8 @@ export async function getMediaSource(m) {
     if (seconds > 8) return { error: 'الفيديو طويل — ابعت مقطع 8 ثواني أو أقل' };
     try {
       return { buffer: await streamToBuffer(await downloadContentFromMessage(mVid, 'video')), kind: 'video' };
-    } catch {}\n  }
+    } catch {}
+  }
 
   return null;
 }
