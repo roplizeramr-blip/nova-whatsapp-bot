@@ -589,8 +589,8 @@ export function detectIntent(rawText, m = null) {
 
   // b) Guess (التخمين)
   if (
-    /^(?:شغل|ابدا|العب|نلعب|عايز\s+العب)?\s*(?:لعب[ةه]\s+)?(?:التخمين|تخمين|خمن\s+الرقم|guess)$/i.test(norm) ||
-    norm.includes('تخمين') || norm.includes('خمن الرقم')
+    /^(?:شغل|ابدا|العب|نلعب|عايز\s+العب)?\s*(?:لعب[ةه]\s+)?(?:التخمين|تخمين|خمن\s+الرقم|خمن|guess)$/i.test(norm) ||
+    norm === 'تخمين' || norm === 'لعبة التخمين' || norm === 'لعبه التخمين' || norm === 'خمن الرقم'
   ) {
     return { type: 'game_guess' };
   }
@@ -621,18 +621,17 @@ export function detectIntent(rawText, m = null) {
 
   // f) Truth or Dare (صراحة وجرأة)
   if (
-    norm.includes('صراح') ||
-    (norm.includes('حقيق') && norm.includes('تحدي')) ||
-    (norm.includes('حقيق') && norm.includes('جراه')) ||
-    norm.includes('truth')
+    /^(?:شغل|ابدا|العب|نلعب|عايز\s+العب)?\s*(?:لعب[ةه]\s+)?(?:صراح[ةه]\s*(?:و|او|أم)?\s*(?:تحدي|جر[اأ][ةه])|صراح[ةه]|truth\s*(?:or|and)\s*dare)$/i.test(norm) ||
+    norm === 'صراحة' || norm === 'صراحه' || norm === 'لعبة صراحة' || norm === 'لعبه صراحه' ||
+    (norm.includes('لعب') && (norm.includes('صراح') || norm.includes('جرأة') || norm.includes('جراه')))
   ) {
     return { type: 'game_truth_dare' };
   }
 
   // g) Hangman (المشنقة)
   if (
-    norm.includes('مشنق') ||
-    norm.includes('hangman')
+    /^(?:شغل|ابدا|العب|نلعب|عايز\s+العب)?\s*(?:لعب[ةه]\s+)?(?:المشنق[ةه]|مشنق[ةه]|hangman)$/i.test(norm) ||
+    norm === 'المشنقة' || norm === 'مشنقة' || norm === 'مشنقه' || norm === 'لعبة المشنقة'
   ) {
     return { type: 'game_hang' };
   }
@@ -739,8 +738,8 @@ export function detectIntent(rawText, m = null) {
     return { type: 'quick_ping' };
   }
   if (
-    norm.includes('نكت') ||
-    /^(?:قول|احكي|سمعني)?\s*(?:لي\s+|ليا\s+)?(?:نكت[ةه]|فزور[ةه]|حاج[ةه]\s+تضحك)$/i.test(norm)
+    /^(?:قول|احكي|سمعني|هات|عايز|عاوز)?\s*(?:لي\s+|ليا\s+)?(?:نكت[ةه]|نكتة\s+حلوة|حاج[ةه]\s+تضحك)$/i.test(norm) ||
+    norm === 'نكتة' || norm === 'نكته' || norm === 'نكت'
   ) {
     return { type: 'quick_joke' };
   }

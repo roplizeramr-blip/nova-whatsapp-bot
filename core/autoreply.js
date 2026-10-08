@@ -1,7 +1,6 @@
 import api from './api.js';
 import { chatWithAI, cleanForVoice, isErrorText } from './ai.js';
-import { dispatchToolAction, extractImageUrl } from './tool-caller.js';
-import { TRIGGERS } from './persona.js';
+import { TRIGGERS, TRIGGERS_REGEX } from './persona.js';
 import {
   rememberMessage,
   learnFromText,
@@ -53,7 +52,8 @@ export function isAddressedToBot(sock, m) {
   const mine = botNumbers(sock);
   const mentioned = ctx?.mentionedJid?.some((j) => mine.includes(normJid(j))) ?? false;
   const repliedToBot = ctx?.participant ? mine.includes(normJid(ctx.participant)) : false;
-  const triggered = TRIGGERS.some((t) => m.body.toLowerCase().includes(t.toLowerCase()));
+  const text = m.body?.trim() ?? '';
+  const triggered = TRIGGERS_REGEX.test(text);
 
   // 🤫 الوضع الصامت: حتى في الخاص مايردش غير على المنادى
   if (!m.isGroup) {
@@ -66,7 +66,21 @@ export function isAddressedToBot(sock, m) {
     if (getSettings(m.jid).aiChatAll && mode !== 'quiet') return true;
   } catch {}
 
-  return mentioned || repliedToBot || triggered;
+  // 👥 في الجروبات العادية:
+  // 1) لو منشن صريح للبوت
+  if (mentioned) return true;
+
+  // 2) لو نداء واضح باسم البوت (استرو / نوفا / يا بوت / astro / nova)
+  if (triggered) return true;
+
+  // 3) لو رد/اقتباس لرسالة من رسائل البوت — فلترة صارمة لمنع الرد على الضحك والكلمات العابرة
+  if (repliedToBot) {
+    const isTrivial = /^(?:اه|أه|لا|تمام|اوك|اوكي|ماشي|ماشى|شكرا|شكراً|😂+|🤣+|هههه+|هنج|ضحك|ايوة|ايوه|تسلم|حبيبي|منور|كفو|حلو|جميل|مشكور|ليه|مين|طب|طيب|خلاص|عادي|بس)$/i.test(text);
+    if (isTrivial || text.length < 3) return false;
+    return true;
+  }
+
+  return false;
 }
 
 // 💭 ترحيب العائد بعد غياب — يكمّل من نفس النقطة
@@ -127,6 +141,9 @@ export async function maybeAutoReply(sock, m) {
     // كلام كتير أوي (أغنية/محاضرة) — ناخد أول 800 حرف ونرد عادي
     text = text.slice(0, 800);
   }
+
+  // 🗣️ في الجروبات: لو الرسالة مش موجهة للبوت → متتدخلش في دردشة الناس خالص!
+  if (m.isGroup && !isAddressedToBot(sock, m)) return;
   // 🔗 لينك يوتيوب → أزرار تحميل فورية (من غير أوامر)
   const ytMatch = text.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{6,})/);
   if (ytMatch && !isVoiceInput) {

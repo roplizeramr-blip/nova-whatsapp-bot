@@ -465,26 +465,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     console.warn('⚠️ VEX Gemini تعذر:', err.message?.slice(0, 80));
   }
 
-  // 3) Engez ChatGPT / Copilot — احتياطي بمهلة قصيرة
-  try {
-    const q = isInsult
-      ? `${roastInstruction.slice(0, 900)}\n\nرسالته: ${text.slice(0, 250)}`
-      : `${gptInstruction}${retryHint}\n\nرسالته: ${text.slice(0, 400)}`;
-    const reply = await api.chatgpt(q);
-    if (reply?.trim()) {
-      const clean = polishReply(reply, { allowLong });
-      if (!isErrorText(clean)) return { reply: clean, engine: 'chatgpt' };
-    }
-  } catch (err) {
-    console.warn('⚠️ Engez ChatGPT فشل:', err.message?.slice(0, 80));
-  }
-
-  // 4) 🛟 خط الأمان: رد استرو الفوري بشخصيته المصرية الذكية (0 ملي ثانية)
-  try {
-    const sim = await api.simsimi(text.slice(0, 200)).catch(() => null);
-    if (sim?.trim() && !isErrorText(sim)) return { reply: polishReply(sim, { allowLong }), engine: 'simsimi' };
-  } catch {}
-
+  // 3) 🛟 خط الأمان الفوري: رد استرو الفوري بشخصيته المصرية الذكية (0 ملي ثانية بدون تأخير)
   const canned = offlineReply(text, { isInsult, profile, isDev });
   if (canned) return { reply: canned, engine: 'offline' };
 
