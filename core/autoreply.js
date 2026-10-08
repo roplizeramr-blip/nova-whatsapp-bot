@@ -279,7 +279,7 @@ export async function maybeAutoReply(sock, m) {
       sender: m.sender,
       senderAlt: m.senderAlt,
       pushName: m.pushName,
-      voice: wantsVoice,
+      voice: Boolean(wantsVoice || isVoiceInput),
       extra,
       mode: db.get('modes', {})[m.jid] ?? 'normal',
     });

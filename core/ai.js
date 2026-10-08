@@ -397,12 +397,13 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
         mood,
         text,
         mode,
+        isVoice: Boolean(voice),
       });
 
       const res = await chatAtria({
         system: isInsult ? roastInstruction : atriaSystem,
         messages: [...convo, userMsg],
-        maxTokens: allowLong ? 400 : 160,
+        maxTokens: allowLong ? 400 : (voice ? 120 : 160),
         temperature: variants > 0 ? 0.85 : 0.65,
         timeout: 25000,
       });
@@ -588,7 +589,10 @@ function offlineReply(text, { isInsult, profile, isDev }) {
 
 export function cleanForVoice(text) {
   return String(text)
+    .replace(/\[TOOL:[^\]]*\]/gi, '')
+    .replace(/https?:\/\/[^\s]+/gi, '')
     .replace(/[*_~`#]+/g, '')
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // Emojis
     .replace(/[^\p{L}\p{N}\s.,!?،؟:؛"'\-()]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()

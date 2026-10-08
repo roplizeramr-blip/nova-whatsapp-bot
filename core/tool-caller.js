@@ -155,18 +155,19 @@ export function detectIntent(rawText, m = null) {
   // ─────────────────────────────────────────────────────────────
   // 1. 🎙️ Celebrity & Natural Voice Intent (صوت المشاهير والذكاء الاصطناعي الطبيعي)
   // ─────────────────────────────────────────────────────────────
-  // a) "بصوتك", "اتكلم بصوتك", "قول بصوتك", "رد بصوتك"
-  const botVoicePattern = /^(?:قول|اتكلم|انطق|رد|احكي|غرد|تكلم)?\s*(?:لي\s+|ليا\s+|معايا\s+|علي\s+|عليا\s+)?(?:بصوتك|صوتك|بالصوت)\s*(.*)$/i;
-  const botVoiceMatch = norm.match(botVoicePattern);
-  if (botVoiceMatch) {
+  // a) "بصوتك", "اتكلم بصوتك", "قول بصوتك", "رد بصوتك", "كلمني صوت", "تقدر تتكلم صوت"
+  const botVoicePattern = /^(?:قول|اتكلم|انطق|رد|احكي|غرد|تكلم|كلمني)?\s*(?:لي\s+|ليا\s+|معايا\s+|علي\s+|عليا\s+)?(?:بصوتك|صوتك|بالصوت|صوت|فويس)\s*(.*)$/i;
+  const canVoicePattern = /(?:تقدر\s+تتكلم\s+صوت|بتتكلم\s+صوت|كلمني\s+صوت\s+تقدر|كلمني\s+صوت|اتكلم\s+صوت|صوتك\s+شغال)/i;
+  if (botVoicePattern.test(norm) || canVoicePattern.test(norm)) {
     let cleanText = cleanUserInput(rawText)
-      .replace(/^(?:قول|اتكلم|انطق|رد|احكي|غرد|تكلم)?\s*(?:لي\s+|ليا\s+|معايا\s+|علي\s+|عليا\s+)?(?:بصوتك|صوتك|بالصوت)\s*/i, '')
+      .replace(/^(?:قول|اتكلم|انطق|رد|احكي|غرد|تكلم|كلمني)?\s*(?:لي\s+|ليا\s+|معايا\s+|علي\s+|عليا\s+)?(?:بصوتك|صوتك|بالصوت|صوت|فويس)\s*/i, '')
+      .replace(/(?:تقدر|يا\s*صحبي|يا\s*صاحبي|تقدر\s*تتكلم|معايا)\s*$/i, '')
       .trim();
     return {
       type: 'celebrity_tts',
-      voice: 'adam',
-      character: 'adam',
-      text: cleanText || 'يا هلا بيك يا صاحبي! أنا استرو، اتفضل أؤمرني وسامعك بكل وضوح',
+      voice: 'neymar',
+      character: 'neymar',
+      text: cleanText || 'أكيد يا صاحبي أقدر أتكلم معاك صوت وفويسي شغال معاك بكل وضوح! اتفضل أؤمرني يا غالي وسامعك بكل حب',
     };
   }
 
@@ -1362,7 +1363,7 @@ export async function dispatchToolAction(sock, m, text, profile) {
 
       const buttons = results.slice(0, 3).map((r, i) => ({
         label: `🎬 تحميل ${i + 1}`,
-        id: `.song dl-${r.index ?? i}`,
+        id: `.song dl-${r.index ?? i}` agencies?.[0] || `.song dl-${i}`,
       }));
 
       const summary = results
@@ -1794,21 +1795,35 @@ export async function executeAgentTool(sock, m, tool, profile) {
   }
 
   if (name === 'edit_image') {
-    const prompt = arg1 || 'تعديل ذكي بالذكاء الاصطناعي';
+    const prompt = arg1 || 'تعديل وتجسيد الصورة بالذكاء الاصطناعي';
     const imgUrl = await extractImageUrl(m);
     if (!imgUrl) {
       await sendText(sock, m.jid, '🎨 يا فنان ابعت الصورة أو رد عليها عشان أقدر أعدلها لك بالذكاء الاصطناعي!');
       return true;
     }
-    await sendText(sock, m.jid, '🎨 حاضر يا فنان! جاري تعديل صورتك بالذكاء الاصطناعي... ⏳');
+    await sendText(sock, m.jid, '🎨 حاضر يا فنان! جاري تعديل صورتك وتجسيدها بالذكاء الاصطناعي... ⏳');
     try {
-      const edited = await api.vexEditImage(imgUrl, prompt);
+      let edited = await api.vexEditImage(imgUrl, prompt).catch(() => null);
+      let isFallback = false;
+      if (!edited) {
+        edited = (await api.vexAiImage(prompt, { model: 'flux' }).catch(() => null)) ||
+                 (await api.image(prompt).catch(() => null));
+        isFallback = true;
+      }
       if (edited) {
-        await sendImage(sock, m.jid, edited, `✨ تم تعديل الصورة بنجاح:\n"${prompt}"`);
+        await sendImage(sock, m.jid, edited, `✨ تم ${isFallback ? 'تجسيد الصورة' : 'تعديل الصورة'} بالذكاء الاصطناعي:\n"${prompt}"`);
+        await sendQuickReplies(sock, m.jid, {
+          title: '✨ خيارات الصورة',
+          text: 'تحب نعمل إيه في الصورة؟ 👇',
+          buttons: [
+            { label: '🎬 تحويل لفيديو', id: `.video ${prompt}` },
+            { label: '🎨 تعديل آخر', id: `.edit ${prompt}` },
+          ],
+        }).catch(() => {});
         return true;
       }
     } catch {}
-    await sendText(sock, m.jid, '🎨 خدمة تعديل الصور مش متاحة حالياً، جرب تاني بعد شوية!');
+    await sendText(sock, m.jid, '🎨 معلش يا فنان، خدمة تعديل الصور مضغوطة دلوقتي، جرب تاني بوصف مختلف!');
     return true;
   }
 
