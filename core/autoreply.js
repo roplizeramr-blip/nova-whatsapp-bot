@@ -130,7 +130,7 @@ export async function maybeAutoReply(sock, m) {
   if (!isAddressedToBot(sock, m)) return;
 
   // 🔗 لينك يوتيوب → أزرار تحميل فورية (من غير أوامر)
-  const ytMatch = text.match(/(?:https?:/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{6,})/);
+  const ytMatch = text.match(/(?:https?:\/{2})?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{6,})/);
   if (ytMatch && !isVoiceInput) {
     const link = `https://www.youtube.com/watch?v=${ytMatch[1]}`;
     const caches = db.get('linkCache', {});
@@ -150,7 +150,7 @@ export async function maybeAutoReply(sock, m) {
 
   // 🔗 لينكات تيك توك / إنستجرام / فيسبوك — تحميل مباشر بأمر واحد
   if (!isVoiceInput && !m.isGroup) {
-    const social = text.match(/https?:\/\/(?:www\.|vm\.|vt\.)?(?:tiktok\.com|instagram\.com|facebook\.com|fb\.watch)\/[^\s]+/i);
+    const social = text.match(/https?:\/{2}(?:www\.|vm\.|vt\.)?(?:tiktok\.com|instagram\.com|facebook\.com|fb\.watch)\/[^\s]+/i);
     if (social) {
       const link = social[0];
       const kind = /tiktok/i.test(link) ? 'تك توك' : /instagram/i.test(link) ? 'إنستجرام' : 'فيسبوك';
