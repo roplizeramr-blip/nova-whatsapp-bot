@@ -54,7 +54,7 @@ function state() {
 
 export default {
   name: 'scramble',
-  aliases: ['ترتيب', 'حروف', 'رتب', 'ترتيب_الحروف', 'فكك_وركب'],
+  aliases: ['رتب_الحروف', 'حروف', 'رتب', 'ترتيب_الحروف', 'فكك_وركب', 'فكك'],
   description: 'لعبة ترتيب الحروف المبعثرة — ركب الكلمة واكسب عملات',
   usage: '.scramble  أو  اكتب الكلمة مباشرة في الشات',
   async execute(sock, m, args) {
