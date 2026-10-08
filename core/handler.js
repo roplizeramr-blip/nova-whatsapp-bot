@@ -8,6 +8,7 @@ import { normalizeArabic } from './arabic.js';
 import { resolveKey, canonicalKey } from './identity.js';
 import { awardXp, checkBadges } from './economy.js';
 import { bump, recordCommandError } from './stats.js';
+import { interceptGameInput } from './game-interceptor.js';
 
 const cooldowns = new Map();
 // 🗣️ آخر مرة قلنالها "استنى" — عشان الرد يبقى مرة في البرست مش مع كل رسالة
@@ -139,7 +140,15 @@ export async function handleUpsert(sock, ctx, { messages, type }) {
       await routeCommand(sock, m, ctx);
       // 🧠 الرد الذكي التلقائي — للأوامر اللي مش بأوامر (خاص / منشن / رد / كلمة سحرية)
       if (!m.body.startsWith(config.prefix)) {
-        await maybeAutoReply(sock, m);
+        let gameHandled = false;
+        try {
+          gameHandled = await interceptGameInput(sock, m);
+        } catch (gameErr) {
+          console.error('⚠️ خطأ في معالج الألعاب التلقائي:', gameErr);
+        }
+        if (!gameHandled) {
+          await maybeAutoReply(sock, m);
+        }
       }
     } catch (err) {
       console.error('❌ خطأ في معالجة رسالة:', err);
