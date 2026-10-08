@@ -296,20 +296,20 @@ export const api = {
 
   async chatgpt(prompt) {
     try {
-      const d = await get('/api/v1/ai/chatgpt', { prompt }, 60000);
+      const d = await get('/api/v1/ai/chatgpt', { prompt }, 10000);
       return d.response?.result?.message ?? d.response?.reply ?? d.response?.raw ?? d.response ?? '';
     } catch {
-      const d = await get('/api/v1/ai/gpt', { q: prompt }, 60000);
+      const d = await get('/api/v1/ai/gpt', { q: prompt }, 10000);
       return d.response?.result?.message ?? d.response?.raw ?? '';
     }
   },
 
   async copilot(q) {
     try {
-      const d = await get('/api/v1/ai/copilot', { q }, 60000);
+      const d = await get('/api/v1/ai/copilot', { q }, 10000);
       return d.response?.result?.message ?? d.response?.message ?? d.response?.raw ?? d.response ?? '';
     } catch {
-      const d = await get('/api/v1/ai/', { q }, 60000);
+      const d = await get('/api/v1/ai/', { q }, 10000);
       return d.response?.result?.message ?? d.response?.message ?? d.response?.raw ?? d.response ?? '';
     }
   },
@@ -678,7 +678,7 @@ export const api = {
 
   // 🤖 جيميناي السريع فائق الاستجابة — VEX Gemini
   async vexGemini(prompt) {
-    const d = await vexGet('/api/ai/gemini', { prompt }, 12000);
+    const d = await vexGet('/api/ai/gemini', { prompt }, 25000);
     return d.reply ?? d.data?.reply ?? d.response ?? '';
   },
 };

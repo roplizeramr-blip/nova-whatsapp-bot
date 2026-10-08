@@ -96,7 +96,16 @@ export async function getMediaSource(m) {
   const ctx = m.message?.extendedTextMessage?.contextInfo;
   const quoted = ctx?.quotedMessage;
   if (quoted?.imageMessage) {
-    return { buffer: await streamToBuffer(await downloadContentFromMessage(quoted.imageMessage, 'image')), kind: 'image' };
+    try {
+      const buffer = await streamToBuffer(await downloadContentFromMessage(quoted.imageMessage, 'image'));
+      if (buffer.length > 500) return { buffer, kind: 'image' };
+    } catch {}
+    if (quoted.imageMessage.jpegThumbnail) {
+      const thumb = Buffer.isBuffer(quoted.imageMessage.jpegThumbnail)
+        ? quoted.imageMessage.jpegThumbnail
+        : Buffer.from(quoted.imageMessage.jpegThumbnail);
+      if (thumb.length > 300) return { buffer: thumb, kind: 'image' };
+    }
   }
   if (quoted?.videoMessage) {
     const seconds = quoted.videoMessage.seconds ?? 0;

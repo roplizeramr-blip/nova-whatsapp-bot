@@ -164,10 +164,29 @@ export async function imageToUrl(msg) {
       msg?.msg?.message?.imageMessage ||
       msg?.imageMessage;
     if (!imgMsg) return null;
-    const stream = await downloadContentFromMessage(imgMsg, 'image');
-    let buffer = Buffer.alloc(0);
-    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-    return await uploadBuffer(buffer);
+
+    try {
+      const stream = await downloadContentFromMessage(imgMsg, 'image');
+      let buffer = Buffer.alloc(0);
+      for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+      if (buffer.length > 500) {
+        const u = await uploadBuffer(buffer);
+        if (u) return u;
+      }
+    } catch {}
+
+    // 🖼️ احتياطي ذكي: استخراج المعاينة المرفقة بالرد في حال عدم توفر مفتاح التشفير
+    if (imgMsg.jpegThumbnail) {
+      const thumb = Buffer.isBuffer(imgMsg.jpegThumbnail)
+        ? imgMsg.jpegThumbnail
+        : Buffer.from(imgMsg.jpegThumbnail);
+      if (thumb.length > 300) {
+        const u = await uploadBuffer(thumb, 'thumb.jpg', 'image/jpeg');
+        if (u) return u;
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }

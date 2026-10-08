@@ -1200,7 +1200,19 @@ export async function dispatchToolAction(sock, m, text, profile) {
     await sendText(sock, m.jid, `🎵 ثواني يا فنان، بدورلك على "${cleanQuery}" وبجهزلك أحلى جودة... ⏳`);
 
     try {
-      let results = await api.ytSearch(cleanQuery, 3).catch(() => []);
+      // 🎯 تنظيف وتنسيق الكلمات لضمان دقة البحث الغنائي في يوتيوب وتجنب الفتاوى والبودكاست
+      let ytQuery = cleanQuery
+        .replace(/(?:ريلز|ريل|ستوري|حالات|قصير[ةه]|باسم\s+حبيبتي|حبيبتي|كامل[ةه])\s*/gi, ' ')
+        .trim();
+
+      if (!/^(?:اغني[ةه]|أغني[ةه]|مهرجان|تراك|كليب|انشود[ةه]|لحن|موسيقى)/i.test(ytQuery)) {
+        ytQuery = `اغنية ${ytQuery}`;
+      }
+
+      let results = await api.ytSearch(ytQuery, 3).catch(() => []);
+      if (!results || !results.length) {
+        results = await api.ytSearch(cleanQuery, 3).catch(() => []);
+      }
       if (!results || !results.length) {
         // تجربة سبوتيفاي احتياط
         const sp = await api.spotifySearch(cleanQuery, 3).catch(() => []);
