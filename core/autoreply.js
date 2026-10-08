@@ -1,5 +1,5 @@
 import api from './api.js';
-import { dispatchToolAction, extractImageUrl } from './tool-caller.js';
+import { dispatchToolAction, executeAgentTool, extractImageUrl } from './tool-caller.js';
 import { chatWithAI, cleanForVoice, isErrorText } from './ai.js';
 import { TRIGGERS, TRIGGERS_REGEX } from './persona.js';
 import {
@@ -270,6 +270,8 @@ export async function maybeAutoReply(sock, m) {
   }
 
   let reply = null;
+  let reasoning = null;
+  let agentTools = [];
   try {
     const res = await chatWithAI({
       text,
@@ -282,6 +284,8 @@ export async function maybeAutoReply(sock, m) {
       mode: db.get('modes', {})[m.jid] ?? 'normal',
     });
     reply = typeof res === 'string' ? res : (res?.reply ?? null);
+    reasoning = res?.reasoning ?? null;
+    agentTools = res?.tools ?? [];
     bump('aiReplies');
     awardXp(key, 3);
   } catch (err) {
@@ -290,6 +294,25 @@ export async function maybeAutoReply(sock, m) {
       reply = await api.simsimi(text);
     } catch {
       reply = null;
+    }
+  }
+
+  // 🛠️ تنفيذ أداة الإيجنت الذكية لو طلبها Atria Dawn Preview
+  if (agentTools.length > 0) {
+    try {
+      const executed = await executeAgentTool(sock, m, agentTools[0], profile);
+      if (executed) {
+        bump('commands');
+        awardXp(key, 5);
+        rememberMessage(key, 'bot', `[إيجنت Atria نفذ: ${agentTools[0].name}]`);
+        if (reply && reply.length > 10 && !reply.startsWith('[TOOL:')) {
+          await sendText(sock, m.jid, reply);
+        }
+        chillTick(key);
+        return;
+      }
+    } catch (e) {
+      console.error('⚠️ خطأ في تنفيذ أداة الإيجنت:', e.message);
     }
   }
 
@@ -316,13 +339,11 @@ export async function maybeAutoReply(sock, m) {
     db.set('replyCache', caches);
   }
 
-  // حفظ آخر سؤال ورد لزرار المتابعة
-  // ⚠️ كان متخزّن بـ m.jid بس — نفس مشكلة chat.js: في جروب، أي حد يضغط
-  // "قولها بصوت" بيبعت إجابة حد تاني. دلوقتي لكل مستخدم حالته.
+  // حفظ آخر سؤال ورد لزرار المتابعة مع خطوات التفكير
   const states = db.get('aiState', {});
   const aiKey = `${m.jid}::${key}`;
-  states[aiKey] = { lastPrompt: text, lastReply: reply, by: key, at: now };
-  // 🧹 تشذيب — نحتفظ بآخر 50 حالة بس (كانت بتتراكم للأبد)
+  states[aiKey] = { lastPrompt: text, lastReply: reply, lastReasoning: reasoning, by: key, at: now };
+  // 🧹 تشذيب — نحتفظ بآخر 50 حالة بس
   const stateKeys = Object.keys(states);
   if (stateKeys.length > 50) {
     stateKeys
@@ -349,13 +370,15 @@ export async function maybeAutoReply(sock, m) {
     }
   }
 
-  // 💡 أزرار الإجراءات الحيوية فقط (بدون زر الصوت الإجباري لكل رد عادي)
+  // 💡 أزرار الإجراءات الحيوية: خطوات التفكير + الإجراءات المقترحة
   const hint = hintFor(text);
   const buttons = [];
+  if (reasoning && reasoning.trim().length > 10) {
+    buttons.push({ label: '🧠 خطوات التفكير', id: '.ai thought' });
+  }
   if (hint) {
     buttons.push({ label: `⚡ ${config.prefix}${hint}`, id: `${config.prefix}${hint}` });
   } else if (reply.length > 350) {
-    // فقط في الشروحات أو الإجابات الطويلة جداً نتيح خيار الاستماع الصوتي
     buttons.push({ label: '🎧 استمع بصوت', id: '.ai voice' });
   }
 

@@ -37,7 +37,13 @@ export const config = {
   // ☁️ سيرفر الـ API
   apiBaseUrl: env('API_BASE_URL', 'https://engez.a7a.online'),
 
-  // ⚡ Groq — العقل السريع (qwen3.8-27b) + السمع (whisper)
+  // 🧠 سيرفر وموديل Atria ASI الأساسي — Atria Dawn Preview (744B MoE - 256K Context)
+  atriaApiKey: env('ATRIA_API_KEY', 'atr_gsZP1Fk1KpD2r250y33U_ay3nJbHtsdQ'),
+  atriaBaseUrl: env('ATRIA_BASE_URL', 'https://api.atria-asi.ai/v1'),
+  atriaModel: env('ATRIA_MODEL', 'Atria-Dawn-Preview'),
+  aiPrimary: env('AI_PRIMARY', 'atria'),
+
+  // ⚡ Groq — العقل الاحتياطي (qwen3.8-27b) + السمع (whisper)
   groqApiKey: env('GROQ_API_KEY', ''),
   groqModel: env('GROQ_MODEL', 'qwen/qwen3.8-27b'),
   sttModel: env('STT_MODEL', 'whisper-large-v3'),

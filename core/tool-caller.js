@@ -1749,8 +1749,134 @@ export async function dispatchToolAction(sock, m, text, profile) {
   return false;
 }
 
+/**
+ * تنفيذ الأدوات التي طلبها الإيجنت الذكي Atria Dawn Preview تلقائياً
+ */
+export async function executeAgentTool(sock, m, tool, profile) {
+  if (!tool || !tool.name) return false;
+  const { name, arg1, arg2, arg3 } = tool;
+
+  if (name === 'image') {
+    const prompt = arg1 || 'صورة جميلة بالذكاء الاصطناعي';
+    await sendText(sock, m.jid, '🎨 حاضر من عيني يا فنان! ببدأ أرسمها بالذكاء الاصطناعي حالا... ⏳');
+    try {
+      const url = await api.image(prompt);
+      if (url) {
+        await sendImage(sock, m.jid, url, `🎨 تم الرسم بالذكاء الاصطناعي بواسطة إيجنت Atria:\n"${prompt}"`);
+        await sendQuickReplies(sock, m.jid, {
+          title: '✨ خيارات الصورة',
+          text: 'عايز نعمل إيه في الصورة دي؟ 👇',
+          buttons: [
+            { label: '🎬 تحويل لفيديو', id: `.video ${prompt}` },
+            { label: '🎨 رسم نسخة تانية', id: `.image ${prompt}` },
+          ],
+        });
+        return true;
+      }
+    } catch {}
+    await sendText(sock, m.jid, '🎨 معلش يا صاحبي حصل ضغط على خدمة توليد الصور، جرب كمان شوية!');
+    return true;
+  }
+
+  if (name === 'video') {
+    const prompt = arg1 || 'فيديو جميل بالذكاء الاصطناعي';
+    const ratio = arg2 || '16:9';
+    await sendText(sock, m.jid, `🎬 أحلى فيديو لعيونك! جاري صناعة الفيديو بأبعاد ${ratio} بالذكاء الاصطناعي... ⏳`);
+    try {
+      const url = await api.video(prompt, { ratio });
+      if (url) {
+        await sendVideo(sock, m.jid, url, `🎬 تم إنشاء الفيديو:\n"${prompt}"`);
+        return true;
+      }
+    } catch {}
+    await sendText(sock, m.jid, '🎬 معلش يا صاحبي خدمة الفيديو عليها ضغط حالياً!');
+    return true;
+  }
+
+  if (name === 'edit_image') {
+    const prompt = arg1 || 'تعديل ذكي بالذكاء الاصطناعي';
+    const imgUrl = await extractImageUrl(m);
+    if (!imgUrl) {
+      await sendText(sock, m.jid, '🎨 يا فنان ابعت الصورة أو رد عليها عشان أقدر أعدلها لك بالذكاء الاصطناعي!');
+      return true;
+    }
+    await sendText(sock, m.jid, '🎨 حاضر يا فنان! جاري تعديل صورتك بالذكاء الاصطناعي... ⏳');
+    try {
+      const edited = await api.vexEditImage(imgUrl, prompt);
+      if (edited) {
+        await sendImage(sock, m.jid, edited, `✨ تم تعديل الصورة بنجاح:\n"${prompt}"`);
+        return true;
+      }
+    } catch {}
+    await sendText(sock, m.jid, '🎨 خدمة تعديل الصور مش متاحة حالياً، جرب تاني بعد شوية!');
+    return true;
+  }
+
+  if (name === 'song') {
+    const q = arg1 || '';
+    if (q) {
+      await showSongChoices(sock, m.jid, q);
+      return true;
+    }
+  }
+
+  if (name === 'apk') {
+    const q = arg1 || '';
+    if (q) {
+      await sendText(sock, m.jid, '📱 ثواني يا غالي، بجيبلك ملف التطبيق الأصلي من المتجر... ⏳');
+      try {
+        const apps = await api.vexApk(q, 3);
+        if (apps.length) {
+          const top = apps[0];
+          await sendText(sock, m.jid, `📱 *تطبيق:* ${top.name}\n📦 *الحجم:* ${top.sizeHuman || 'غير محدد'}\n⭐ *التقييم:* ${top.rating || '5.0'}\n🔗 *رابط التحميل المباشر:* ${top.apkUrl || top.pageUrl}`);
+          return true;
+        }
+      } catch {}
+      await sendText(sock, m.jid, '📱 ملقتش التطبيق ده للأسف يا غالي!');
+      return true;
+    }
+  }
+
+  if (name === 'akwam') {
+    const q = arg1 || '';
+    if (q) {
+      await sendText(sock, m.jid, '🍿 أحلى سهرة سينمائية لعيونك! بدورلك في أكوام... ⏳');
+      try {
+        const movies = await api.vexAkwam(q);
+        if (movies.length) {
+          const top = movies[0];
+          const caption = `🍿 *العنوان:* ${top.title}\n⭐ *التقييم:* ${top.rating || 'غير متوفر'}\n🎞️ *الجودة:* ${top.quality || 'HD'}\n🔗 *رابط المشاهدة والتحميل:* ${top.url}`;
+          if (top.poster) {
+            await sendImage(sock, m.jid, top.poster, caption);
+          } else {
+            await sendText(sock, m.jid, caption);
+          }
+          return true;
+        }
+      } catch {}
+      await sendText(sock, m.jid, '🍿 ملقتش الفيلم أو المسلسل ده في أكوام يا غالي!');
+      return true;
+    }
+  }
+
+  if (name === 'voice') {
+    const char = arg1 || 'messi';
+    const textToSpeak = arg2 || arg1 || 'أهلاً يا غالي';
+    try {
+      const audioUrl = await api.vexTts(textToSpeak, char);
+      if (audioUrl) {
+        await sendVoice(sock, m.jid, audioUrl);
+        return true;
+      }
+    } catch {}
+  }
+
+  return false;
+}
+
 export default {
   dispatchToolAction,
+  executeAgentTool,
   detectIntent,
   normalizeText,
   cleanUserInput,

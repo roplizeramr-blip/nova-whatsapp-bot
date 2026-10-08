@@ -2,6 +2,7 @@ import api from './api.js';
 import { db } from './db.js';
 import { isOpen, noteEmpty } from './api.js';
 import { chatGroq, groqAnalyze, isGroqReady } from './groq.js';
+import { isAtriaReady, chatAtria, buildAtriaAgentPrompt, extractAgentTools } from './atria.js';
 import { PERSONA_FULL, FEW_SHOTS_FULL, PERSONA_COMPACT, LAYERS, MODES, RELATIONSHIPS, INSULT_DEFENSE, BOT_MOODS } from './persona.js';
 import { analyzeLocally, needsAiAnalysis } from './intent.js';
 import { findContact } from './identity.js';
@@ -382,7 +383,49 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
   const isInsult = isInsultText(text) && !contact;
   const roastInstruction = `${PERSONA_COMPACT}\n\n${INSULT_DEFENSE}\n\nالمهم دلوقتي: الرسالة دي إهانة ليك — رد عليه بقهر مصري حاد وسخرية في سطر واحد من غير سباب صريح.`;
 
-  // 1) ⚡ Groq qwen3.8-27b — العقل فائق السرعة بالشخصية الكاملة (إذا وجد المفتاح)
+  // 1) 🧠 Atria Dawn Preview (744B MoE — 256K Context) — العقل الرئيسي مع استدلال وتفكير عميق مدمج
+  if (isAtriaReady()) {
+    try {
+      const atriaSystem = buildAtriaAgentPrompt({
+        profile,
+        pushName,
+        contact,
+        isDev,
+        mood,
+        text,
+        mode,
+      });
+
+      const res = await chatAtria({
+        system: isInsult ? roastInstruction : atriaSystem,
+        messages: [...convo, userMsg],
+        maxTokens: 480,
+        temperature: variants > 0 ? 0.85 : 0.7,
+        timeout: 28000,
+      });
+
+      if (res?.reply) {
+        let clean = polishReply(res.reply, { allowLong });
+        if (isDev && /(?:مش عارفك|لا أعرفك|مين انت|من أنت|لا أستطيع معرفتك)/i.test(clean)) {
+          clean = 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي 👑❤️ أؤمرني يا ريس، كل طلباتك مجابة فوراً!';
+        }
+        if (!isErrorText(clean)) {
+          return {
+            reply: clean,
+            rawReply: res.rawReply,
+            reasoning: res.reasoning,
+            engine: 'atria-dawn',
+            tools: res.tools || [],
+            speedMs: res.speedMs,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Atria Dawn Preview تعذر أو استغرق وقتاً، جاري التحويل للمزود التالي:', err.message?.slice(0, 80));
+    }
+  }
+
+  // 2) ⚡ Groq qwen3.8-27b — العقل الاحتياطي فائق السرعة (إذا وجد المفتاح)
   if (isGroqReady()) {
     const recentBots = (profile.lastMessages ?? []).filter((h) => h.role === 'bot').slice(-3);
     let first = null;

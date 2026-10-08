@@ -237,6 +237,18 @@ const s = (v) => (v == null ? 'null' : String(v));
 
 export const api = {
   // ━━━━━━━━━ 🤖 الذكاء ━━━━━━━━━
+  // 🧠 Atria Dawn Preview (744B MoE) — العقل الاستدلالي الرئيسي
+  async atria(prompt, { system = '', maxTokens = 500, temperature = 0.7 } = {}) {
+    const { chatAtria } = await import('./atria.js');
+    const res = await chatAtria({
+      system,
+      messages: [{ role: 'user', content: String(prompt) }],
+      maxTokens,
+      temperature,
+    });
+    return res.reply ?? '';
+  },
+
   async gpt(q) {
     const d = await get('/api/v1/ai/gpt', { q }, 60000);
     return d.response?.result?.message ?? d.response?.raw ?? '';

@@ -74,6 +74,12 @@ export default {
       return sendImage(sock, m.jid, url, `🖼️ ${state.lastPrompt}`);
     }
 
+    // 🧠 عرض خطوات التفكير والاستدلال المنطقي لنموذج Atria
+    if (sub === 'thought' || sub === 'think' || sub === 'تفكير') {
+      if (!state.lastReasoning) return m.reply('🧠 مفيش خطوات تفكير مسجلة للسؤال الأخير.');
+      return m.reply(`🧠 *خطوات التفكير والتحليل المنطقي (Atria Dawn Preview):*\n\n${state.lastReasoning}`);
+    }
+
     // 🔄 زوّد كلام عن آخر موضوع
     if (sub === 'more') {
       if (!state.lastPrompt) return m.reply('مفيش موضوع لسه — اسألني الأول بـ `.ai سؤالك`');
@@ -104,12 +110,15 @@ async function ask(sock, m, question, senderKey) {
   rememberMessage(key, 'user', question);
 
   let reply = null;
+  let reasoning = null;
   try {
-    ({ reply } = await chatWithAI({
+    const res = await chatWithAI({
       text: question,
       key,
       pushName: m.pushName,
-    }));
+    });
+    reply = res?.reply;
+    reasoning = res?.reasoning;
   } catch {
     // "كل المصادر فشلت" وغيرها — رسالة مصرية مفهومة أحسن من stack trace
     return m.reply('🥴 عقلي مشغول شوية والموود فاصل دلوقتي — ابعت سؤالك تاني بعد دقيقة');
@@ -119,7 +128,13 @@ async function ask(sock, m, question, senderKey) {
     return m.reply('🥴 الرد اللي جالي من الشبكة بايظ — اسألني تاني');
   }
   rememberMessage(key, 'bot', reply);
-  saveState(sKey, { lastReply: reply });
+  saveState(sKey, { lastReply: reply, lastReasoning: reasoning });
 
-  await sendQuickReplies(sock, m.jid, { text: reply, buttons: SUGGESTIONS });
+  const buttons = [];
+  if (reasoning && reasoning.trim().length > 10) {
+    buttons.push({ label: '🧠 خطوات التفكير', id: '.ai thought' });
+  }
+  buttons.push({ label: '🎧 قولها بصوت', id: '.ai voice' });
+
+  await sendQuickReplies(sock, m.jid, { text: reply, buttons });
 }
