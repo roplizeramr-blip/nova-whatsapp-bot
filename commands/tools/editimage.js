@@ -10,18 +10,19 @@ export default {
   description: 'تعديل الصور بالذكاء الاصطناعي بواسطة برومبت — .edit [الوصف] (بالرد على صورة أو إرفاقها)',
   usage: '.edit [الوصف]  (رد على صورة أو مع صورة)',
   async execute(sock, m, args) {
+    const media = await getMediaSource(m).catch(() => null);
     const quoted = m.quoted || m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-    const hasImage = !!(m.message?.imageMessage || quoted?.imageMessage);
+    const hasImage = !!(media?.buffer || m.message?.imageMessage || quoted?.imageMessage);
 
-    if (!hasImage) {
+    if (!hasImage && !media?.buffer) {
       return m.reply(
-        '📷 *تعديل الصور بالذكاء الاصطناعي*\n\n' +
+        '📷 *تعديل وتجسيد الصور بالذكاء الاصطناعي*\n\n' +
         'قم بالرد على صورة أو إرفاق صورة مع كتابة الوصف:\n' +
         '`.edit [الوصف المطلوب]`\n\n' +
         '💡 *أمثلة:*\n' +
-        '• `.edit خليه لابس بدلة فضاء فخمة`\n' +
-        '• `.edit حول الصورة لكرتون أنمي نيون`\n' +
-        '• `.edit ضيف خلفية شاطئ وغروب شمس`'
+        '• `.edit خليه لابس بدلة فضاء فخمة نيون`\n' +
+        '• `.edit حول الصورة لكرتون أنمي 3D`\n' +
+        '• `.edit ضيف خلفية شاطئ وغروب شمس سينمائي`'
       );
     }
 
@@ -30,16 +31,14 @@ export default {
       return m.reply('✍️ اكتب الوصف أو التعديل المطلوب مع الصورة!\nمثال: `.edit حولها لكرتون 3D`');
     }
 
-    await sendText(sock, m.jid, '🎨 جاري تعديل وتجسيد الصورة بالذكاء الاصطناعي... استنى شوية ⏳');
+    await sendText(sock, m.jid, '🎨 جاري تعديل وتجسيد صورتك بالذكاء الاصطناعي... استنى شوية ⏳');
 
-    let url = await imageToUrl(m);
+    let url = null;
+    if (media?.buffer) {
+      url = await uploadBuffer(media.buffer).catch(() => null);
+    }
     if (!url) {
-      try {
-        const media = await getMediaSource(m);
-        if (media?.buffer) {
-          url = await uploadBuffer(media.buffer);
-        }
-      } catch {}
+      url = await imageToUrl(m).catch(() => null);
     }
 
     try {
@@ -49,14 +48,15 @@ export default {
       }
       let isFallback = false;
 
-      // إذا تعذر تعديل الصورة بالخادم المباشر، يتم التجسيد الفوري الذكي بالذكاء الاصطناعي
+      // 🛡️ بديل فوري مضمون: التجسيد الذكي عبر Flux أو MagicStudio
       if (!editedUrl) {
-        editedUrl = (await api.image(prompt).catch(() => null)) || (await api.vexAiImage(prompt, { model: 'flux' }).catch(() => null));
+        editedUrl = (await api.vexAiImage(prompt, { model: 'flux' }).catch(() => null)) ||
+                    (await api.image(prompt).catch(() => null));
         isFallback = true;
       }
 
       if (!editedUrl) {
-        return m.reply('⚠️ تعذر تعديل الصورة — جرب صورة أوضح أو برومبت مختلف');
+        return m.reply('⚠️ تعذر تعديل الصورة حالياً — جرب بوصف أوضح');
       }
 
       await sendImage(

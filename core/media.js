@@ -93,36 +93,74 @@ export async function audioToUrl(m) {
 
 // الميديا المطلوبة: من رد على رسالة، أو من الصورة اللي مبعوطة مع الأمر نفسه
 export async function getMediaSource(m) {
+  if (!m) return null;
   const ctx = m.message?.extendedTextMessage?.contextInfo;
-  const quoted = ctx?.quotedMessage;
-  if (quoted?.imageMessage) {
+  const quoted = m.quoted || ctx?.quotedMessage;
+
+  // 1) فحص الرسالة المقتبسة بجميع أشكالها (عادية، viewOnce، مستندات)
+  const qImg =
+    quoted?.imageMessage ||
+    quoted?.viewOnceMessage?.message?.imageMessage ||
+    quoted?.viewOnceMessageV2?.message?.imageMessage ||
+    (quoted?.documentMessage?.mimetype?.startsWith('image/') ? quoted.documentMessage : null);
+
+  if (qImg) {
     try {
-      const buffer = await streamToBuffer(await downloadContentFromMessage(quoted.imageMessage, 'image'));
+      const buffer = await streamToBuffer(await downloadContentFromMessage(qImg, 'image'));
       if (buffer.length > 500) return { buffer, kind: 'image' };
-    } catch {}
-    if (quoted.imageMessage.jpegThumbnail) {
-      const thumb = Buffer.isBuffer(quoted.imageMessage.jpegThumbnail)
-        ? quoted.imageMessage.jpegThumbnail
-        : Buffer.from(quoted.imageMessage.jpegThumbnail);
+    } catch {}\n    if (qImg.jpegThumbnail) {
+      const thumb = Buffer.isBuffer(qImg.jpegThumbnail)
+        ? qImg.jpegThumbnail
+        : Buffer.from(qImg.jpegThumbnail);
       if (thumb.length > 300) return { buffer: thumb, kind: 'image' };
     }
   }
-  if (quoted?.videoMessage) {
-    const seconds = quoted.videoMessage.seconds ?? 0;
+
+  const qVid =
+    quoted?.videoMessage ||
+    quoted?.viewOnceMessage?.message?.videoMessage ||
+    quoted?.viewOnceMessageV2?.message?.videoMessage;
+
+  if (qVid) {
+    const seconds = qVid.seconds ?? 0;
     if (seconds > 8) return { error: 'الفيديو طويل — ابعت مقطع 8 ثواني أو أقل' };
-    return { buffer: await streamToBuffer(await downloadContentFromMessage(quoted.videoMessage, 'video')), kind: 'video' };
-  }
+    try {
+      const buffer = await streamToBuffer(await downloadContentFromMessage(qVid, 'video'));
+      return { buffer, kind: 'video' };
+    } catch {}\n  }
+
   if (quoted?.stickerMessage) {
-    return { buffer: await streamToBuffer(await downloadContentFromMessage(quoted.stickerMessage, 'sticker')), kind: 'sticker' };
-  }
-  if (m.message?.imageMessage) {
-    return { buffer: await streamToBuffer(await downloadContentFromMessage(m.message.imageMessage, 'image')), kind: 'image' };
-  }
-  if (m.message?.videoMessage) {
-    const seconds = m.message.videoMessage.seconds ?? 0;
+    try {
+      return { buffer: await streamToBuffer(await downloadContentFromMessage(quoted.stickerMessage, 'sticker')), kind: 'sticker' };
+    } catch {}\n  }
+
+  // 2) فحص الرسالة الحالية نفسها
+  const mImg =
+    m.message?.imageMessage ||
+    m.message?.viewOnceMessage?.message?.imageMessage ||
+    m.message?.viewOnceMessageV2?.message?.imageMessage ||
+    m.msg?.imageMessage ||
+    (m.message?.documentMessage?.mimetype?.startsWith('image/') ? m.message.documentMessage : null);
+
+  if (mImg) {
+    try {
+      const buffer = await streamToBuffer(await downloadContentFromMessage(mImg, 'image'));
+      if (buffer.length > 500) return { buffer, kind: 'image' };
+    } catch {}\n  }
+
+  const mVid =
+    m.message?.videoMessage ||
+    m.message?.viewOnceMessage?.message?.videoMessage ||
+    m.message?.viewOnceMessageV2?.message?.videoMessage ||
+    m.msg?.videoMessage;
+
+  if (mVid) {
+    const seconds = mVid.seconds ?? 0;
     if (seconds > 8) return { error: 'الفيديو طويل — ابعت مقطع 8 ثواني أو أقل' };
-    return { buffer: await streamToBuffer(await downloadContentFromMessage(m.message.videoMessage, 'video')), kind: 'video' };
-  }
+    try {
+      return { buffer: await streamToBuffer(await downloadContentFromMessage(mVid, 'video')), kind: 'video' };
+    } catch {}\n  }
+
   return null;
 }
 

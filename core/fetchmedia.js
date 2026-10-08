@@ -76,7 +76,7 @@ function kindOf(type = '', url = '') {
 
 // 🔁 meta refresh في HTML: <meta http-equiv="refresh" content="0; url=...">
 function metaRefresh(html) {
-  const m = html.match(/http-equiv=["']?refresh["']?[^>]*content=["'][^"']*url=([^"';]+)/i);
+  const m = html.match(/http-equiv=["']?refresh["']?[^>]*content=["']?[^"']*url=([^"';]+)/i);
   if (!m) return null;
   // الرابط قد يكون نسبيًا؛ joinUrl يحله نسبةً لعنوان الصفحة الحالية.
   return m[1].trim();
@@ -94,8 +94,41 @@ function joinUrl(base, href) {
  * ينزّل الوسائط ويحل التحويلات (HTTP + meta-refresh)
  * @returns {{buffer: Buffer, type: string, kind: string}}
  */
-export async function fetchMedia(url, { expect = null, headers = {}, timeout = 45000, maxRedirects = 6 } = {}) {
-  let current = url;
+export async function fetchMedia(url, { expect = null, headers = {}, timeout = 25000, maxRedirects = 6 } = {}) {
+  if (Buffer.isBuffer(url)) {
+    const kind = detectKindFromBuffer(url) || expect || 'image';
+    return { buffer: url, type: kind === 'image' ? 'image/jpeg' : 'application/octet-stream', kind };
+  }
+
+  let current = String(url || '').trim();
+  if (!current) throw new Error('رابط الوسائط غير صالح');
+
+  // ⚡ مسار الجلب السريع والمباشر عبر native fetch (أسرع وأضمن مع خوادم الصور مثل i.ibb.co)
+  if (typeof fetch === 'function' && /^https?:\/\//i.test(current)) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), Math.min(timeout, 12000));
+      const res = await fetch(current, {
+        signal: controller.signal,
+        headers: { 'User-Agent': UA, Accept: '*/*', ...headers },
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const type = res.headers.get('content-type') || '';
+        if (!/^text\/html/i.test(type)) {
+          const ab = await res.arrayBuffer();
+          const buf = Buffer.from(ab);
+          if (buf.length >= 500) {
+            let kind = kindOf(type, current) || detectKindFromBuffer(buf);
+            if (!kind && expect && /octet-stream|binary/i.test(type)) kind = expect;
+            if (kind && (!expect || kind === expect)) {
+              return { buffer: buf, type: type || 'image/jpeg', kind };
+            }
+          }
+        }
+      }
+    } catch {}
+  }
 
   for (let hop = 0; hop < maxRedirects; hop++) {
     const res = await axios.get(current, {

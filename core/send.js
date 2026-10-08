@@ -116,6 +116,17 @@ export async function sendAudio(sock, jid, audioUrl, extra = {}) {
 
 // 🖼️ صورة
 export async function sendImage(sock, jid, imageUrl, caption, extra = {}) {
+  // ⚡ دعم فوري للـ Buffer المباشر بدون أي طلبات شبكة
+  if (Buffer.isBuffer(imageUrl)) {
+    return await withRetry('إرسال صورة Buffer', () =>
+      sock.sendMessage(jid, {
+        image: imageUrl,
+        mimetype: 'image/jpeg',
+        caption,
+        ...extra,
+      }));
+  }
+
   try {
     const { buffer, type } = await fetchMedia(imageUrl, { expect: 'image' });
     return await withRetry('إرسال الصورة', () =>
@@ -126,7 +137,21 @@ export async function sendImage(sock, jid, imageUrl, caption, extra = {}) {
         ...extra,
       }));
   } catch (err) {
-    console.error('⚠️ فشل الإرسال:', err.message?.slice(0, 70));
+    console.warn('⚠️ فشل جلب الصورة عبر fetchMedia:', err.message?.slice(0, 70));
+    // محاولة إرسال الرابط مباشرة لـ Baileys ليتكفل واتساب بتحميله
+    if (typeof imageUrl === 'string' && /^https?:\/\//i.test(imageUrl)) {
+      try {
+        return await withRetry('إرسال رابط الصورة لـ Baileys', () =>
+          sock.sendMessage(jid, {
+            image: { url: imageUrl },
+            caption,
+            ...extra,
+          }));
+      } catch (e2) {
+        console.warn('⚠️ فشل إرسال رابط الصورة لـ Baileys:', e2.message?.slice(0, 70));
+      }
+    }
+
     // لو الصورة WebP واتساب مش بيقبلها — حوّلها JPEG
     try {
       const { buffer } = await fetchMedia(imageUrl, {});
@@ -134,7 +159,7 @@ export async function sendImage(sock, jid, imageUrl, caption, extra = {}) {
       return await withRetry('إرسال الصورة المحوّلة', () =>
         sock.sendMessage(jid, { image: jpg, mimetype: 'image/jpeg', caption, ...extra }));
     } catch {
-      return fallbackText(sock, jid, '🖼️ مقدرتش أبعت الصورة دي');
+      return fallbackText(sock, jid, `🖼️ ${caption ? caption + '\n\n' : ''}🔗 رابط الصورة: ${imageUrl}`);
     }
   }
 }

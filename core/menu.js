@@ -109,15 +109,22 @@ function footer() {
 
 const BACK = { label: '🔙 القائمة الرئيسية', id: '.menu' };
 
-// إرسال تفاعلي مرن — أزرار لو مدعومة، ونص فخم جداً مدمج يضمن العرض في كل الحالات
-async function send(sock, jid, { title, text, buttons = [], sections = [], selectTitle = 'اختر' }) {
+export const MENU_BANNER_URL = 'https://i.ibb.co/6RrBXZSF/image-1791497647997.png';
+
+// إرسال تفاعلي مرن — أزرار لو مدعومة، مع دعم البانر المصور وبدائل موثوقة 100%
+async function send(sock, jid, { title, text, buttons = [], sections = [], selectTitle = 'اختر', image = null }) {
   const list = [...buttons].slice(0, 10);
 
+  // 1) محاولة الإرسال كـ كارت تفاعلي ببانر عبر MB.Button
   try {
     const b = new MB.Button(sock);
-    b.setTitle(String(title ?? '').slice(0, 60))
-      .setBody(String(text ?? '').slice(0, 4000))
+    if (title) b.setTitle(String(title).slice(0, 60));
+    b.setBody(String(text ?? '').slice(0, 4000))
       .setFooter(footer());
+
+    if (image) {
+      b.setImage(image);
+    }
 
     if (sections?.length) {
       b.addSelection(selectTitle);
@@ -125,22 +132,41 @@ async function send(sock, jid, { title, text, buttons = [], sections = [], selec
         b.makeSection(s.title, s.highlight_label ?? '');
         for (const r of s.rows) b.makeRow(r.header ?? r.title, r.title, r.description ?? '', r.id);
       }
-    }
-
-    for (const btn of list) {
-      const label = String(btn.label).slice(0, 40);
-      if (typeof btn.id === 'string' && btn.id.startsWith('copy:')) {
-        b.addCopy(label, btn.id.slice(5));
-      } else {
-        b.addReply(label, btn.id);
+    } else {
+      for (const btn of list) {
+        const label = String(btn.label).slice(0, 40);
+        if (typeof btn.id === 'string' && btn.id.startsWith('copy:')) {
+          b.addCopy(label, btn.id.slice(5));
+        } else {
+          b.addReply(label, btn.id);
+        }
       }
     }
 
     await b.send(jid);
+    return;
   } catch (err) {
-    // لو واتساب حجب الأزرار التفاعلية، بنبعت النص الفخم مباشرة
-    await sock.sendMessage(jid, { text });
+    console.warn('⚠️ تعذر إرسال MB.Button، جاري الإرسال المصور المباشر مع الأزرار:', err.message);
   }
+
+  // 2) بديل موثوق 100%: إرسال صورة البانر مع النص وأزرار الرد السريع
+  try {
+    const { sendImage, sendQuickReplies } = await import('./send.js');
+    if (image) {
+      await sendImage(sock, jid, image, text);
+      if (list.length) {
+        await sendQuickReplies(sock, jid, {
+          title: title || '⚡ اختيارات سريعة',
+          text: 'اختر القسم أو الإجراء المطلوب 👇',
+          buttons: list,
+        }).catch(() => {});
+      }
+      return;
+    }
+  } catch {}
+
+  // 3) بديل النص العادي لو تعذر كل شيء
+  await sock.sendMessage(jid, { text });
 }
 
 // ═══ المستوى 1: القائمة الرئيسية الفخمة ═══
@@ -152,7 +178,7 @@ export async function mainMenu(sock, jid, extra = '', ctx = null) {
   if (ctx?.categories) {
     for (const cmds of ctx.categories.values()) totalUniqueCmds += cmds.length;
   }
-  const cmdsCount = totalUniqueCmds || 101;
+  const cmdsCount = totalUniqueCmds || 103;
 
   const textLines = [
     '╭───────────────────────────────╮',
@@ -167,38 +193,28 @@ export async function mainMenu(sock, jid, extra = '', ctx = null) {
     `👑 *المالك الأساسي:* عمرو (01044626335)`,
     '',
     '════════════════════════════════',
-    '📂 *تصفح الأقسام:*',
-    'اختر القسم المناسب من *القائمة المنسدلة بالأسفل* 👇',
-    'أو اضغط زر *لوحة المطور* للتواصل المباشر مع المطور 👑',
+    '📂 *الأقسام الأكثر استخداماً:*',
+    'اضغط أي زر بالأسفل لتصفح أوامر القسم فوراً 👇',
     '════════════════════════════════',
   ];
 
   const fullText = textLines.join('\n');
 
-  // زران رئيسيان نظيفان وفخمان تحت القائمة المنسدلة
+  // أزرار سريعة منظمة وفخمة بأهم الأقسام بدون تشتيت
   const buttons = [
-    { label: '📂 تصفح كل الأقسام', id: '.menu all' },
-    { label: '👑 لوحة المطور والتواصل', id: '.owner' },
-  ];
-
-  const sections = [
-    {
-      title: '📂 تصفح أقسام الأوامر الـ 11',
-      rows: SECTIONS.map((s) => ({
-        header: `${s.emoji} ${s.label}`,
-        title: s.label,
-        description: s.desc.slice(0, 50),
-        id: `.menu ${s.id}`,
-      })),
-    },
+    { label: '🤖 الذكاء الاصطناعي', id: '.menu ai' },
+    { label: '📥 التحميل والميديا', id: '.menu download' },
+    { label: '🎮 الألعاب والتحديات', id: '.menu games' },
+    { label: '💰 البنك والاقتصاد', id: '.menu economy' },
+    { label: '📂 كل الأقسام (11)', id: '.menu all' },
+    { label: '👑 لوحة المطور', id: '.owner' },
   ];
 
   return send(sock, jid, {
     title: '⚡ لوحة أوامر بـوت استرو',
     text: fullText,
     buttons,
-    sections,
-    selectTitle: '📂 اضغط لاختيار القسم',
+    image: MENU_BANNER_URL,
   });
 }
 
