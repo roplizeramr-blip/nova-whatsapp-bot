@@ -1,4 +1,5 @@
 import api from './api.js';
+import { dispatchToolAction, extractImageUrl } from './tool-caller.js';
 import { chatWithAI, cleanForVoice, isErrorText } from './ai.js';
 import { TRIGGERS, TRIGGERS_REGEX } from './persona.js';
 import {
