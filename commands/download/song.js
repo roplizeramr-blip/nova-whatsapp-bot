@@ -192,7 +192,15 @@ export default {
         title: `🎵 نتائج أخرى لـ "${text.slice(0, 25)}"`,
         text: 'تقدر تختار أي تراك تاني من نتائج البحث 👇',
         sections: [
-          {\r\n            title: 'باقي نتائج يوتيوب',\r\n            rows: results.slice(1).map((r, i) => ({\r\n              title: `🎵 ${String(r.title).slice(0, 24)}`,\r\n              description: `${r.duration ?? ''} ${r.author ? '• ' + r.author : ''}`,\r\n              id: `.song dl-${i + 1}`,\r\n            })),\r\n          },\r\n        ],
+          {
+            title: 'باقي نتائج يوتيوب',
+            rows: results.slice(1).map((r, i) => ({
+              title: `🎵 ${String(r.title).slice(0, 24)}`,
+              description: `${r.duration ?? ''} ${r.author ? '• ' + r.author : ''}`,
+              id: `.song dl-${i + 1}`,
+            })),
+          },
+        ],
         selectTitle: '🔍 تصفح باقي النتائج',
       });
     }
