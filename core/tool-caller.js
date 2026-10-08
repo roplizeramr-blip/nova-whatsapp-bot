@@ -117,7 +117,30 @@ export function hasAttachedImage(m) {
 }
 
 // قائمة المشاهير والشخصيات الصوتية المدعومة وألقابهم الشائعة
-const CELEBRITY_VOICE_MAP = [\n  // 🌟 أصوات ElevenLabs الطبيعية فائقة الدقة (عربي ومصري بطلاقة)\n  { id: 'adam', aliases: ['ادم', 'آدم', 'adam', 'استرو', 'صوتك', 'نوفا'] },\n  { id: 'liam', aliases: ['ليام', 'liam'] },\n  { id: 'antoni', aliases: ['انطوني', 'أنطوني', 'antoni'] },\n  { id: 'bella', aliases: ['بيلا', 'bella'] },\n  { id: 'matilda', aliases: ['ماتيلدا', 'matilda'] },\n\n  // ⚽🎭 مشاهير VoxBox\n  { id: 'messi', aliases: ['ميسي', 'ليونيل ميسي', 'ليو ميسي', 'messi', 'lionel messi'] },\n  { id: 'goku', aliases: ['غوكو', 'كوكو', 'جوكو', 'goku', 'son goku'] },\n  { id: 'eminem', aliases: ['ايمينيم', 'امينيم', 'eminem', 'slim shady'] },\n  { id: 'therock', aliases: ['ذا روك', 'روك', 'the rock', 'therock', 'صخرة', 'دواين جونسون', 'dwayne johnson'] },\n  { id: 'neymar', aliases: ['نيمار', 'نيمار جونيور', 'neymar', 'neymar jr'] },\n  { id: 'mbappe', aliases: ['مبابي', 'كيليان مبابي', 'mbappe', 'kylian مبابي'] },\n  { id: 'kanye', aliases: ['كانيه', 'كاني', 'كانيي', 'كانيه ويست', 'كاني ويست', 'kanye', 'kanye west'] },\n  { id: 'drake', aliases: ['دريك', 'drake'] },\n  { id: 'snoop', aliases: ['سنوب', 'سنوب دوج', 'سنوب دوغ', 'سنوب دوجي', 'snoop', 'snoop dogg'] },\n  { id: 'morgan', aliases: ['مورغان', 'مورجان', 'مورغان فريمان', 'morgan', 'morgan freeman'] },\n  { id: 'ronaldo', aliases: ['رونالدو', 'كريستيانو', 'الدون', 'ronaldo', 'cr7'] },\n  { id: 'trump', aliases: ['ترامب', 'دونالد ترامب', 'trump', 'donald trump'] },\n  { id: 'biden', aliases: ['بايدن', 'جو بايدن', 'biden', 'joe biden'] },\n  { id: 'bellingham', aliases: ['بيلينغهام', 'بيلينجهام', 'bellingham'] },\n];
+const CELEBRITY_VOICE_MAP = [
+  // 🌟 أصوات ElevenLabs الطبيعية فائقة الدقة (عربي ومصري بطلاقة)
+  { id: 'adam', aliases: ['ادم', 'آدم', 'adam', 'استرو', 'صوتك', 'نوفا'] },
+  { id: 'liam', aliases: ['ليام', 'liam'] },
+  { id: 'antoni', aliases: ['انطوني', 'أنطوني', 'antoni'] },
+  { id: 'bella', aliases: ['بيلا', 'bella'] },
+  { id: 'matilda', aliases: ['ماتيلدا', 'matilda'] },
+
+  // ⚽🎭 مشاهير VoxBox
+  { id: 'messi', aliases: ['ميسي', 'ليونيل ميسي', 'ليو ميسي', 'messi', 'lionel messi'] },
+  { id: 'goku', aliases: ['غوكو', 'كوكو', 'جوكو', 'goku', 'son goku'] },
+  { id: 'eminem', aliases: ['ايمينيم', 'امينيم', 'eminem', 'slim shady'] },
+  { id: 'therock', aliases: ['ذا روك', 'روك', 'the rock', 'therock', 'صخرة', 'دواين جونسون', 'dwayne johnson'] },
+  { id: 'neymar', aliases: ['نيمار', 'نيمار جونيور', 'neymar', 'neymar jr'] },
+  { id: 'mbappe', aliases: ['مبابي', 'كيليان مبابي', 'mbappe', 'kylian مبابي'] },
+  { id: 'kanye', aliases: ['كانيه', 'كاني', 'كانيي', 'كانيه ويست', 'كاني ويست', 'kanye', 'kanye west'] },
+  { id: 'drake', aliases: ['دريك', 'drake'] },
+  { id: 'snoop', aliases: ['سنوب', 'سنوب دوج', 'سنوب دوغ', 'سنوب دوجي', 'snoop', 'snoop dogg'] },
+  { id: 'morgan', aliases: ['مورغان', 'مورجان', 'مورغان فريمان', 'morgan', 'morgan freeman'] },
+  { id: 'ronaldo', aliases: ['رونالدو', 'كريستيانو', 'الدون', 'ronaldo', 'cr7'] },
+  { id: 'trump', aliases: ['ترامب', 'دونالد ترامب', 'trump', 'donald trump'] },
+  { id: 'biden', aliases: ['بايدن', 'جو بايدن', 'biden', 'joe biden'] },
+  { id: 'bellingham', aliases: ['بيلينغهام', 'بيلينجهام', 'bellingham'] },
+];
 
 /**
  * فحص وتصنيف نية المستخدم (Intent Detection)
@@ -657,7 +680,7 @@ export function detectIntent(rawText, m = null) {
   if (transMatch) {
     let remainder = cleanUserInput(rawText).replace(/^(?:ترجملي|ترجم\s+لي|ترجم)\s*/i, '').trim();
     let targetLang = 'ar';
-    const langDetect = remainder.match(/^(?:لـ|ل|إلى|الي|to\s+)?(انجليزي|إنجليزي|عربي|فرنساوي|فرنسي|تركي|الماني|ألماني|روسي|اسباني|إسباني|en|ar|fr|tr|de|ru|es)\s*[:،,-]?\s*(.+)$/i;
+    const langDetect = remainder.match(/^(?:لـ|ل|إلى|الي|to\s+)?(انجليزي|إنجليزي|عربي|فرنساوي|فرنسي|تركي|الماني|ألماني|روسي|اسباني|إسباني|en|ar|fr|tr|de|ru|es)\s*[:،,-]?\s*(.+)$/i);
     if (langDetect) {
       const l = langDetect[1].toLowerCase();
       if (/انجليزي|en/i.test(l)) targetLang = 'en';
@@ -821,7 +844,14 @@ export async function dispatchToolAction(sock, m, text, profile) {
       const transparentUrl = await api.removeBg(imageUrl);
       if (!transparentUrl) throw new Error('فشل سيرفر تفريغ الصورة');
       await sendImage(sock, m.jid, transparentUrl, '✂️ *تم تفريغ الصورة وإزالة الخلفية بنجاح!*');
-      await sendQuickReplies(sock, m.jid, {\n        title: '✂️ خيارات الصورة المفرغة',\n        text: 'تحب تعمل إيه بالصورة المفرغة يا فنان؟ 👇',\n        buttons: [\n          { label: '🎬 تحويل لفيديو', id: 'اعمللي فيديو سينمائي' },\n          { label: '🎨 تعديل بالذكاء الاصطناعي', id: 'عدلي الصورة دي' },\n        ],\n      });
+      await sendQuickReplies(sock, m.jid, {
+        title: '✂️ خيارات الصورة المفرغة',
+        text: 'تحب تعمل إيه بالصورة المفرغة يا فنان؟ 👇',
+        buttons: [
+          { label: '🎬 تحويل لفيديو', id: 'اعمللي فيديو سينمائي' },
+          { label: '🎨 تعديل بالذكاء الاصطناعي', id: 'عدلي الصورة دي' },
+        ],
+      });
     } catch (err) {
       console.warn('⚠️ فشل تفريغ الصورة:', err.message);
       await sendText(sock, m.jid, '🥴 معلش يا فنان، تعذر تفريغ خلفية الصورة دي حالياً، اتأكد إن الصورة واضحة وجرب تاني!');
@@ -862,7 +892,15 @@ export async function dispatchToolAction(sock, m, text, profile) {
       await sendImage(sock, m.jid, editedUrl, `🎨 *${cleanPrompt}*${isFallback ? '\n✨ (تم تجسيدها بالذكاء الاصطناعي Flux)' : ''}`);
 
       // أزرار المتابعة التفاعلية
-      await sendQuickReplies(sock, m.jid, {\n        title: '🎨 خيارات الصورة',\n        text: 'عجبك التعديل يا فنان؟ تقدر تحول الصورة لفيديو أو ترسم نسخة ثانية بالذكاء الاصطناعي 👇',\n        buttons: [\n          { label: '🎬 تحويل إلى فيديو', id: `اعمللي فيديو ${cleanPrompt}` },\n          { label: '🎨 رسم نسخة ثانية', id: `ارسم لي ${cleanPrompt}` },\n          { label: '🔄 تعديل آخر', id: `عدلي الصورة ${cleanPrompt}` },\n        ],\n      });
+      await sendQuickReplies(sock, m.jid, {
+        title: '🎨 خيارات الصورة',
+        text: 'عجبك التعديل يا فنان؟ تقدر تحول الصورة لفيديو أو ترسم نسخة ثانية بالذكاء الاصطناعي 👇',
+        buttons: [
+          { label: '🎬 تحويل إلى فيديو', id: `اعمللي فيديو ${cleanPrompt}` },
+          { label: '🎨 رسم نسخة ثانية', id: `ارسم لي ${cleanPrompt}` },
+          { label: '🔄 تعديل آخر', id: `عدلي الصورة ${cleanPrompt}` },
+        ],
+      });
     } catch (err) {
       console.warn('⚠️ فشل تعديل الصورة المباشر، جاري التوليد الاحتياطي:', err.message);
       try {
@@ -915,9 +953,19 @@ export async function dispatchToolAction(sock, m, text, profile) {
       all[m.jid] = { type: 'apk', results, at: Date.now() };
       db.set('searchCache', all);
 
-      const details = results.slice(0, 3).map((app, i) => {\n        const sizeStr = app.sizeHuman ? ` • 📦 ${app.sizeHuman}` : '';\n        const verStr = app.version ? ` (v${app.version})` : '';\n        const ratingStr = app.rating ? ` • ⭐ ${app.rating}` : '';\n        const devStr = app.developer ? `\\n👤 المطور: ${app.developer}` : '';\n        const linkStr = app.apkUrl ? `\\n🔗 التحميل المباشر: ${app.apkUrl}` : (app.pageUrl ? `\\n🔗 الصفحة: ${app.pageUrl}` : '');\n        return `${i + 1}. 📱 *${app.name}*${verStr}${sizeStr}${ratingStr}${devStr}${linkStr}`;\n      }).join('\n\n───────────────────\n\n');
+      const details = results.slice(0, 3).map((app, i) => {
+        const sizeStr = app.sizeHuman ? ` • 📦 ${app.sizeHuman}` : '';
+        const verStr = app.version ? ` (v${app.version})` : '';
+        const ratingStr = app.rating ? ` • ⭐ ${app.rating}` : '';
+        const devStr = app.developer ? `\n👤 المطور: ${app.developer}` : '';
+        const linkStr = app.apkUrl ? `\n🔗 التحميل المباشر: ${app.apkUrl}` : (app.pageUrl ? `\n🔗 الصفحة: ${app.pageUrl}` : '');
+        return `${i + 1}. 📱 *${app.name}*${verStr}${sizeStr}${ratingStr}${devStr}${linkStr}`;
+      }).join('\n\n───────────────────\n\n');
 
-      const buttons = results.slice(0, 3).map((app, i) => ({\n        label: `📥 تحميل ${String(app.name).slice(0, 20)}`,\n        id: `.apk dl-${i}`,\n      }));
+      const buttons = results.slice(0, 3).map((app, i) => ({
+        label: `📥 تحميل ${String(app.name).slice(0, 20)}`,
+        id: `.apk dl-${i}`,
+      }));
 
       await sendQuickReplies(sock, m.jid, {
         title: `📱 نتائج تطبيق: ${cleanQuery.slice(0, 25)}`,
@@ -967,7 +1015,14 @@ export async function dispatchToolAction(sock, m, text, profile) {
       const first = results[0];
       const posterUrl = first?.poster;
 
-      const listText = results.slice(0, 3).map((item, i) => {\n        const yearStr = item.year ? ` (${item.year})` : '';\n        const rateStr = item.rating ? ` • ⭐ ${item.rating}` : '';\n        const qualStr = item.quality ? ` • 🎞️ ${item.quality}` : '';\n        const typeStr = item.type ? ` [${item.type}]` : '';\n        const linkStr = item.url ? `\\n🔗 المشاهدة والتحميل: ${item.url}` : '';\n        return `${i + 1}. 🎬 *${item.title}*${yearStr}${typeStr}${rateStr}${qualStr}${linkStr}`;\n      }).join('\n\n───────────────────\n\n');
+      const listText = results.slice(0, 3).map((item, i) => {
+        const yearStr = item.year ? ` (${item.year})` : '';
+        const rateStr = item.rating ? ` • ⭐ ${item.rating}` : '';
+        const qualStr = item.quality ? ` • 🎞️ ${item.quality}` : '';
+        const typeStr = item.type ? ` [${item.type}]` : '';
+        const linkStr = item.url ? `\n🔗 المشاهدة والتحميل: ${item.url}` : '';
+        return `${i + 1}. 🎬 *${item.title}*${yearStr}${typeStr}${rateStr}${qualStr}${linkStr}`;
+      }).join('\n\n───────────────────\n\n');
 
       const fullText = `🍿 *نتائج البحث في أكوام: ${cleanQuery}*\n\n${listText}`;
 
@@ -978,7 +1033,10 @@ export async function dispatchToolAction(sock, m, text, profile) {
         await sendText(sock, m.jid, fullText);
       }
 
-      const buttons = results.slice(0, 3).map((item, i) => ({\n        label: `🍿 ${String(item.title).slice(0, 22)}`,\n        id: `.akwam watch-${i}`,\n      }));
+      const buttons = results.slice(0, 3).map((item, i) => ({
+        label: `🍿 ${String(item.title).slice(0, 22)}`,
+        id: `.akwam watch-${i}`,
+      }));
 
       if (buttons.length > 0) {
         await sendQuickReplies(sock, m.jid, {
@@ -1061,7 +1119,14 @@ export async function dispatchToolAction(sock, m, text, profile) {
       await sendVideo(sock, m.jid, url, `🎬 *${cleanPrompt}*`);
 
       // أزرار المتابعة التفاعلية
-      await sendQuickReplies(sock, m.jid, {\n        title: '🎬 خيارات الفيديو',\n        text: 'عايز تعيد توليد المشهد بأبعاد تانية؟ اختار من هنا 👇',\n        buttons: [\n          { label: '🎬 إعادة بالعرض 16:9', id: `اعمللي فيديو بالعرض ${cleanPrompt}` },\n          { label: '📱 إعادة بالطول 9:16', id: `اعمللي فيديو بالطول ${cleanPrompt}` },\n        ],\n      });
+      await sendQuickReplies(sock, m.jid, {
+        title: '🎬 خيارات الفيديو',
+        text: 'عايز تعيد توليد المشهد بأبعاد تانية؟ اختار من هنا 👇',
+        buttons: [
+          { label: '🎬 إعادة بالعرض 16:9', id: `اعمللي فيديو بالعرض ${cleanPrompt}` },
+          { label: '📱 إعادة بالطول 9:16', id: `اعمللي فيديو بالطول ${cleanPrompt}` },
+        ],
+      });
     } catch (err) {
       console.error('❌ فشل توليد الفيديو في tool-caller:', err.message);
       await sendText(
@@ -1098,7 +1163,14 @@ export async function dispatchToolAction(sock, m, text, profile) {
       await sendImage(sock, m.jid, url, `🎨 *${cleanPrompt}*`);
 
       // أزرار متابعة تفاعلية: تحويل لفيديو أو رسم نسخة تانية
-      await sendQuickReplies(sock, m.jid, {\n        title: '🎨 خيارات الصورة',\n        text: 'عجبتك الصورة؟ تقدر تحولها لفيديو أو ترسم نسخة تانية 👇',\n        buttons: [\n          { label: '🎬 تحويل لفيديو', id: `اعمللي فيديو ${cleanPrompt}` },\n          { label: '🎨 رسم نسخة أخرى', id: `ارسم لي ${cleanPrompt}` },\n        ],\n      });
+      await sendQuickReplies(sock, m.jid, {
+        title: '🎨 خيارات الصورة',
+        text: 'عجبتك الصورة؟ تقدر تحولها لفيديو أو ترسم نسخة تانية 👇',
+        buttons: [
+          { label: '🎬 تحويل لفيديو', id: `اعمللي فيديو ${cleanPrompt}` },
+          { label: '🎨 رسم نسخة أخرى', id: `ارسم لي ${cleanPrompt}` },
+        ],
+      });
     } catch (err) {
       console.error('❌ فشل توليد الصورة في tool-caller:', err.message);
       await sendText(
@@ -1133,7 +1205,14 @@ export async function dispatchToolAction(sock, m, text, profile) {
         // تجربة سبوتيفاي احتياط
         const sp = await api.spotifySearch(cleanQuery, 3).catch(() => []);
         if (sp?.length) {
-          results = sp.map((item, idx) => ({\n            index: idx,\n            id: item.id || String(idx),\n            title: item.title || item.name || cleanQuery,\n            duration: item.duration,\n            author: item.artist || item.artists?.[0]?.name,\n            url: item.url,\n          }));
+          results = sp.map((item, idx) => ({
+            index: idx,
+            id: item.id || String(idx),
+            title: item.title || item.name || cleanQuery,
+            duration: item.duration,
+            author: item.artist || item.artists?.[0]?.name,
+            url: item.url,
+          }));
         }
       }
 
@@ -1182,7 +1261,10 @@ export async function dispatchToolAction(sock, m, text, profile) {
       db.set('searchCache', all);
 
       const top = results.slice(0, 3);
-      const buttons = top.map((r, i) => ({\n        label: `🎬 مقطع ${i + 1}`,\n        id: `.ttsearch dl-${i}-video`,\n      }));
+      const buttons = top.map((r, i) => ({
+        label: `🎬 مقطع ${i + 1}`,
+        id: `.ttsearch dl-${i}-video`,
+      }));
 
       const summary = top
         .map((r, i) => `${i + 1}. 📱 *${(r.desc || 'مقطع تيك توك').slice(0, 45)}*\n👤 ${r.author?.name ?? ''}`)
@@ -1228,7 +1310,10 @@ export async function dispatchToolAction(sock, m, text, profile) {
       }
 
       // إرسال أزرار لباقي الصور
-      const buttons = results.slice(1, 4).map((r, i) => ({\n        label: `🖼️ صورة أخرى ${i + 1}`,\n        id: `.pin img-${i + 1}`,\n      }));
+      const buttons = results.slice(1, 4).map((r, i) => ({
+        label: `🖼️ صورة أخرى ${i + 1}`,
+        id: `.pin img-${i + 1}`,
+      }));
 
       if (buttons.length) {
         await sendQuickReplies(sock, m.jid, {
@@ -1264,7 +1349,10 @@ export async function dispatchToolAction(sock, m, text, profile) {
       all[m.jid] = { type: 'song', results, at: Date.now() };
       db.set('searchCache', all);
 
-      const buttons = results.slice(0, 3).map((r, i) => ({\n        label: `🎬 تحميل ${i + 1}`,\n        id: `.song dl-${r.index ?? i}`,\n      }));
+      const buttons = results.slice(0, 3).map((r, i) => ({
+        label: `🎬 تحميل ${i + 1}`,
+        id: `.song dl-${r.index ?? i}`,
+      }));
 
       const summary = results
         .slice(0, 3)
@@ -1517,152 +1605,134 @@ export async function dispatchToolAction(sock, m, text, profile) {
   // ─────────────────────────────────────────────────────────────
   // 👥 Conversational Group Management (إدارة الجروبات بالذكاء الاصطناعي)
   // ─────────────────────────────────────────────────────────────
-  if (m?.isGroup) {
-    // a) ترفيع أدمن: "ارفع ده ادمن", "ارفع ده", "رقيه ادمن", "خليه ادمن", "خليه مشرف", "ارفع دا"
-    if (
-      /^(?:ارفع|رقيه|رقي|خلي|خليه)\s*(?:ده|دا|هذا|الشخص)?\s*(?:ادمن|مشرف|مسؤول|ادارة|إدارة)?$/i.test(norm) ||
-      norm.includes('ارفع ده ادمن') || norm.includes('ارفع دا ادمن') || norm.includes('رقيه ادمن') || norm.includes('خليه ادمن')
-    ) {
-      if (await requireAdmin(sock, m, 'الترقية')) return true;
-      const target = targetOf(m);
-      if (!target) {
-        await sendText(sock, m.jid, '👥 منشن الشخص أو اعمل رد (Reply) على رسالته عشان أرقيه أدمن! 👑');
-        return true;
-      }
-      try {
-        await sock.groupParticipantsUpdate(m.jid, [target], 'promote');
-        await sendText(sock, m.jid, `🎉 عيوني! رقيت @${target.split('@')[0]} وبقى أدمن في الجروب رسمي 👑`, { mentions: [target] });
-      } catch {
-        await sendText(sock, m.jid, '❌ مقدرتش أرقيه — اتأكد إني أدمن في الجروب ومعايا الصلاحيات الكافية!');
-      }
+  if (intent.type === 'group_promote') {
+    if (await requireAdmin(sock, m, 'الترقية')) return true;
+    const target = targetOf(m);
+    if (!target) {
+      await sendText(sock, m.jid, '👥 منشن الشخص أو اعمل رد (Reply) على رسالته عشان أرقيه أدمن! 👑');
       return true;
     }
+    try {
+      await sock.groupParticipantsUpdate(m.jid, [target], 'promote');
+      await sendText(sock, m.jid, `🎉 عيوني! رقيت @${target.split('@')[0]} وبقى أدمن في الجروب رسمي 👑`, { mentions: [target] });
+    } catch {
+      await sendText(sock, m.jid, '❌ مقدرتش أرقيه — اتأكد إني أدمن في الجروب ومعايا الصلاحيات الكافية!');
+    }
+    return true;
+  }
 
-    if (
-      /^(?:نزل|نزله|شيل|شيله|اسحب)\s*(?:ده|دا|هذا)?\s*(?:من\s+)?(?:الادمن|الإدارة|الادارة|الاشراف|الإشراف|مشرف)?$/i.test(norm) ||
-      norm.includes('نزل ده من الادمن') || norm.includes('نزل ده') || norm.includes('نزله من الادمن') || norm.includes('شيله من الادمن')
-    ) {
-      if (await requireAdmin(sock, m, 'التنزيل')) return true;
-      const target = targetOf(m);
-      if (!target) {
-        await sendText(sock, m.jid, '👥 منشن الأدمن أو اعمل رد (Reply) على رسالته عشان أنزله عضو عادي!');
-        return true;
-      }
-      try {
-        await sock.groupParticipantsUpdate(m.jid, [target], 'demote');
-        await sendText(sock, m.jid, `⬇️ من عيني! نزلت @${target.split('@')[0]} من الإدارة ورجع عضو عادي.`, { mentions: [target] });
-      } catch {
-        await sendText(sock, m.jid, '❌ مقدرتش أنزله — لازم مالك الجروب يعمل كده أو تكون رتبتي أعلى!');
-      }
+  if (intent.type === 'group_demote') {
+    if (await requireAdmin(sock, m, 'التنزيل')) return true;
+    const target = targetOf(m);
+    if (!target) {
+      await sendText(sock, m.jid, '👥 منشن الأدمن أو اعمل رد (Reply) على رسالته عشان أنزله عضو عادي!');
       return true;
     }
+    try {
+      await sock.groupParticipantsUpdate(m.jid, [target], 'demote');
+      await sendText(sock, m.jid, `⬇️ من عيني! نزلت @${target.split('@')[0]} من الإدارة ورجع عضو عادي.`, { mentions: [target] });
+    } catch {
+      await sendText(sock, m.jid, '❌ مقدرتش أنزله — لازم مالك الجروب يعمل كده أو تكون رتبتي أعلى!');
+    }
+    return true;
+  }
 
-    if (
-      /^(?:اطرد|اطرده|طرد|كرش|كرشه|طلع|طلعه|خرج|خرجه)\s*(?:ده|دا|هذا)?\s*(?:برا|برة|من\s+الجروب)?$/i.test(norm) ||
-      norm.includes('اطرد ده') || norm.includes('اطرده') || norm.includes('كرش ده') || norm.includes('طلعه برا')
-    ) {
-      if (await requireAdmin(sock, m, 'طرد الأعضاء')) return true;
-      const target = targetOf(m);
-      if (!target) {
-        await sendText(sock, m.jid, '👥 منشن العضو أو رد على رسالته عشان أطرده فوراً! 🦶');
-        return true;
-      }
-      try {
-        await sock.groupParticipantsUpdate(m.jid, [target], 'remove');
-        await sendText(sock, m.jid, `🦶 مع السلامة! طردت @${target.split('@')[0]} من الجروب براحتكم بقا 😂`, { mentions: [target] });
-      } catch {
-        await sendText(sock, m.jid, '❌ مقدرتش أطرده — اتأكد إني أدمن في الجروب!');
-      }
+  if (intent.type === 'group_kick') {
+    if (await requireAdmin(sock, m, 'طرد الأعضاء')) return true;
+    const target = targetOf(m);
+    if (!target) {
+      await sendText(sock, m.jid, '👥 منشن العضو أو رد على رسالته عشان أطرده فوراً! 🦶');
       return true;
     }
+    try {
+      await sock.groupParticipantsUpdate(m.jid, [target], 'remove');
+      await sendText(sock, m.jid, `🦶 مع السلامة! طردت @${target.split('@')[0]} من الجروب براحتكم بقا 😂`, { mentions: [target] });
+    } catch {
+      await sendText(sock, m.jid, '❌ مقدرتش أطرده — اتأكد إني أدمن في الجروب!');
+    }
+    return true;
+  }
 
-    if (
-      /^(?:ادي|اديله|اعطي|اعطيه)?\s*(?:ده|دا|هذا)?\s*(?:انذار|إنذار|تحذير)$/i.test(norm) ||
-      norm.includes('انذار') || norm.includes('اديله انذار')
-    ) {
-      if (await requireAdmin(sock, m, 'إعطاء إنذار')) return true;
-      const target = targetOf(m);
-      if (!target) {
-        await sendText(sock, m.jid, '👥 منشن العضو أو رد على رسالته عشان أديله إنذار! ⚠️');
-        return true;
-      }
-      const s = getSettings(m.jid);
-      s.warns = s.warns || {};
-      s.warns[target] = (s.warns[target] || 0) + 1;
-      const currentWarns = s.warns[target];
-      const maxWarns = s.maxWarns || 3;
-      if (currentWarns >= maxWarns) {
-        delete s.warns[target];
-        await sock.groupParticipantsUpdate(m.jid, [target], 'remove').catch(() => {});
-        await sendText(sock, m.jid, `⚠️ @${target.split('@')[0]} أخد الإنذار رقم (${currentWarns}/${maxWarns}) واتطرد تلقائياً لتجاوزه الحد الأقصى! 🚫`, { mentions: [target] });
-      } else {
-        await sendText(sock, m.jid, `⚠️ تنبيه يا @${target.split('@')[0]}! أخدت إنذار رسمي (${currentWarns}/${maxWarns}). لو وصلت ${maxWarns} هتتطرد! 🚨`, { mentions: [target] });
-      }
+  if (intent.type === 'group_warn') {
+    if (await requireAdmin(sock, m, 'إعطاء إنذار')) return true;
+    const target = targetOf(m);
+    if (!target) {
+      await sendText(sock, m.jid, '👥 منشن العضو أو رد على رسالته عشان أديله إنذار! ⚠️');
       return true;
     }
+    const s = getSettings(m.jid);
+    s.warns = s.warns || {};
+    s.warns[target] = (s.warns[target] || 0) + 1;
+    const currentWarns = s.warns[target];
+    const maxWarns = s.maxWarns || 3;
+    if (currentWarns >= maxWarns) {
+      delete s.warns[target];
+      await sock.groupParticipantsUpdate(m.jid, [target], 'remove').catch(() => {});
+      await sendText(sock, m.jid, `⚠️ @${target.split('@')[0]} أخد الإنذار رقم (${currentWarns}/${maxWarns}) واتطرد تلقائياً لتجاوزه الحد الأقصى! 🚫`, { mentions: [target] });
+    } else {
+      await sendText(sock, m.jid, `⚠️ تنبيه يا @${target.split('@')[0]}! أخدت إنذار رسمي (${currentWarns}/${maxWarns}). لو وصلت ${maxWarns} هتتطرد! 🚨`, { mentions: [target] });
+    }
+    return true;
+  }
 
-    if (
-      /^(?:منشن|نادي|نداء|اعمل\s+منشن)\s+(?:لل?كل|للجميع|للاعضاء|للأعضاء|جماعي)$/i.test(norm) ||
-      norm === 'منشن للكل' || norm === 'منشن الكل' || norm === 'نداء للكل' || norm === 'تاق للكل'
-    ) {
-      if (await requireAdmin(sock, m, 'منشن الكل')) return true;
-      const parts = await listParticipants(sock, m.jid);
-      if (!parts?.length) {
-        await sendText(sock, m.jid, '❌ مقدرتش أجيب أعضاء الجروب — اتأكد إني أدمن!');
-        return true;
-      }
-      const jids = parts.slice(0, 100).map((p) => p.jid);
-      const msgText = intent.text || 'يا شباب الجروب كله يجمع هنا في حاجة مهمة! 📢🔥';
-      await sendQuickReplies(sock, m.jid, {
-        title: '📢 نداء ومنشن جماعي',
-        text: `${msgText}\n\n👥 عدد الأعضاء: ${jids.length}`,
-        mentions: jids,
-      });
+  if (intent.type === 'group_tagall') {
+    if (await requireAdmin(sock, m, 'منشن الكل')) return true;
+    const parts = await listParticipants(sock, m.jid);
+    if (!parts?.length) {
+      await sendText(sock, m.jid, '❌ مقدرتش أجيب أعضاء الجروب — اتأكد إني أدمن!');
       return true;
     }
+    const jids = parts.slice(0, 100).map((p) => p.jid);
+    const msgText = intent.text || 'يا شباب الجروب كله يجمع هنا في حاجة مهمة! 📢🔥';
+    await sendQuickReplies(sock, m.jid, {
+      title: '📢 نداء ومنشن جماعي',
+      text: `${msgText}\n\n👥 عدد الأعضاء: ${jids.length}`,
+      mentions: jids,
+    });
+    return true;
+  }
 
-    if (/^(?:اقفل|قفل|اغلق|سكر)\s+(?:الجروب|الشات|المجموعة|المجموعه)$/i.test(norm) || norm === 'اقفل الجروب' || norm === 'قفل الجروب') {
-      if (await requireAdmin(sock, m, 'قفل الجروب')) return true;
-      try {
-        await sock.groupSettingUpdate(m.jid, 'announcement');
-        await sendText(sock, m.jid, '🔒 تم قفل الجروب بنجاح! المشرفين بس هما اللي يقدروا يبعتوا رسايل دلوقتي 🤫');
-      } catch {
-        await sendText(sock, m.jid, '❌ مقدرتش أقفل الجروب — اتأكد إني أدمن!');
-      }
-      return true;
+  if (intent.type === 'group_mute') {
+    if (await requireAdmin(sock, m, 'قفل الجروب')) return true;
+    try {
+      await sock.groupSettingUpdate(m.jid, 'announcement');
+      await sendText(sock, m.jid, '🔒 تم قفل الجروب بنجاح! المشرفين بس هما اللي يقدروا يبعتوا رسايل دلوقتي 🤫');
+    } catch {
+      await sendText(sock, m.jid, '❌ مقدرتش أقفل الجروب — اتأكد إني أدمن!');
     }
+    return true;
+  }
 
-    if (/^(?:افتح|فتح)\s+(?:الجروب|الشات|المجموعة|المجموعه)$/i.test(norm) || norm === 'افتح الجروب' || norm === 'فتح الجروب') {
-      if (await requireAdmin(sock, m, 'فتح الجروب')) return true;
-      try {
-        await sock.groupSettingUpdate(m.jid, 'not_announcement');
-        await sendText(sock, m.jid, '🔓 تم فتح الجروب بنجاح! الكل يقدر يشارك ويتكلم دلوقتي ونوروا الشات 🥳✨');
-      } catch {
-        await sendText(sock, m.jid, '❌ مقدرتش أفتح الجروب — اتأكد إني أدمن!');
-      }
-      return true;
+  if (intent.type === 'group_unmute') {
+    if (await requireAdmin(sock, m, 'فتح الجروب')) return true;
+    try {
+      await sock.groupSettingUpdate(m.jid, 'not_announcement');
+      await sendText(sock, m.jid, '🔓 تم فتح الجروب بنجاح! الكل يقدر يشارك ويتكلم دلوقتي ونوروا الشات 🥳✨');
+    } catch {
+      await sendText(sock, m.jid, '❌ مقدرتش أفتح الجروب — اتأكد إني أدمن!');
     }
+    return true;
+  }
 
-    if (/^(?:امسح|احذف)\s*(?:دي|ديه|الرسال[ةه]|الرسال[ةه]\s*دي)?$/i.test(norm)) {
-      if (await requireAdmin(sock, m, 'حذف الرسائل')) return true;
-      const ctx = m.message?.extendedTextMessage?.contextInfo;
-      const quotedKey = ctx?.stanzaId ? {
-        remoteJid: m.jid,
-        fromMe: ctx.participant === sock.user?.id,
-        id: ctx.stanzaId,
-        participant: ctx.participant,
-      } : null;
-      if (!quotedKey) {
-        await sendText(sock, m.jid, '🗑️ رد على الرسالة اللي عايز تمسحها واكتب "امسح دي"!');
-        return true;
-      }
-      try {
-        await sock.sendMessage(m.jid, { delete: quotedKey });
-      } catch {
-        await sendText(sock, m.jid, '❌ مقدرتش أمسح الرسالة — اتأكد إني أدمن في الجروب!');
-      }
+  if (intent.type === 'group_delete') {
+    if (await requireAdmin(sock, m, 'حذف الرسائل')) return true;
+    const ctx = m.message?.extendedTextMessage?.contextInfo;
+    const quotedKey = ctx?.stanzaId ? {
+      remoteJid: m.jid,
+      fromMe: ctx.participant === sock.user?.id,
+      id: ctx.stanzaId,
+      participant: ctx.participant,
+    } : null;
+    if (!quotedKey) {
+      await sendText(sock, m.jid, '🗑️ رد على الرسالة اللي عايز تمسحها واكتب "امسح دي"!');
       return true;
     }
+    try {
+      await sock.sendMessage(m.jid, { delete: quotedKey });
+    } catch {
+      await sendText(sock, m.jid, '❌ مقدرتش أمسح الرسالة — اتأكد إني أدمن في الجروب!');
+    }
+    return true;
   }
 
   return false;
