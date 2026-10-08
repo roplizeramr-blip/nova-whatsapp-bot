@@ -1,6 +1,7 @@
 import api from './api.js';
 import { sendVoice } from './send.js';
 import { config } from '../config.js';
+import { db } from './db.js';
 
 /**
  * تنظيف وتهيئة النص للصوت البشري المشحون بالمشاعر واللهجة المصرية
@@ -26,13 +27,14 @@ export function emotiveVoiceText(text) {
 }
 
 // 🎙️ طبقة الصوت الذكية — رسالة صوتية ناطقة بلهجة عربية ومصرية واقعية وطبيعية
-// الصوت الافتراضي الأساسي: adam (ElevenLabs عبر VEX) - يفهم ويتكلم عربي ومصري بطلاقة تامة
+// الصوت الافتراضي الأساسي: antoni (أنطوني - فائق السرعة في 658ms وطبيعي 100%)
 export async function speak(sock, jid, text, { voice = null } = {}) {
   const clean = emotiveVoiceText(text);
   if (!clean) throw new Error('مفيش كلام');
 
-  // اختيار الصوت: آدم (ElevenLabs) افتراضياً للبوت لأنه أفضل صوت يفهم ويتكلم مصري وعربي
-  const rawRequested = voice ?? config.ttsVoice ?? 'adam';
+  // فحص الصوت المخصص للشات أو الإعدادات العامة
+  const chatVoice = jid ? (db.get('chatVoice', {})[jid] ?? null) : null;
+  const rawRequested = voice ?? chatVoice ?? config.ttsVoice ?? 'antoni';
   const selectedVoice = VOICES[rawRequested] ?? rawRequested;
 
   // 1. الأساسي: VEX ElevenLabs / VoxBox (استجابة فائقة في ~1.2 ثانية وطبيعية 100%)
@@ -45,7 +47,7 @@ export async function speak(sock, jid, text, { voice = null } = {}) {
 
   // 2. الاحتياطي: Anime TTS
   try {
-    const fallbackUrl = await api.animeTts(clean, selectedVoice === 'adam' ? 'غوكو' : selectedVoice);
+    const fallbackUrl = await api.animeTts(clean, (selectedVoice === 'antoni' || selectedVoice === 'adam') ? 'غوكو' : selectedVoice);
     if (fallbackUrl) return await sendVoice(sock, jid, fallbackUrl);
   } catch {}
 

@@ -199,10 +199,11 @@ export async function startBot() {
       for (const p of participants) {
         const jid = typeof p === 'string' ? p : (p?.id ?? p?.jid);
         if (!jid) continue;
+        const digits = String(jid).split(':')[0].split('@')[0];
 
+        // 🚫 فحص القائمة السوداء عند الدخول
         if (action === 'add' && s.banned) {
           const canonical = resolveKey(jid) ?? jid;
-          const digits = String(jid).split(':')[0].split('@')[0];
           const banned = s.banned[canonical] ?? s.banned[jid] ??
             Object.keys(s.banned).find((k) => k.split('@')[0] === digits);
           if (banned) {
@@ -217,14 +218,54 @@ export async function startBot() {
           }
         }
 
-        let template = null;
-        if (action === 'add' && s.welcome) template = s.welcomeText;
-        if (action === 'remove' && s.goodbyeText) template = s.goodbyeText;
-        if (typeof template !== 'string' || !template) continue;
-        const text = template
-          .replaceAll('{user}', '@' + String(jid).split('@')[0])
-          .replaceAll('{group}', groupName);
-        await sock.sendMessage(id, { text, mentions: [jid] });
+        // 👑 تنبيه الترقية لأدمن
+        if (action === 'promote') {
+          const promoteMsg = `🎉 *ألف مبروك يا* @${digits}! 👑✨\nتمت ترقيتك لمشرف وأدمن في جروب *${groupName}* — منور الإدارة وبالتوفيق يا كبير!`;
+          await sock.sendMessage(id, { text: promoteMsg, mentions: [jid] }).catch(() => {});
+          continue;
+        }
+
+        // ⬇️ تنبيه التنزيل من الإدارة
+        if (action === 'demote') {
+          const demoteMsg = `⬇️ *تنبيه:* تم تنزيل @${digits} من إدارة جروب *${groupName}* ورجع عضو عادي.`;
+          await sock.sendMessage(id, { text: demoteMsg, mentions: [jid] }).catch(() => {});
+          continue;
+        }
+
+        // 👋 رسائل الترحيب بصورة البروفايل ومنشن العضو
+        if (action === 'add' && s.welcome !== false) {
+          const welcomeTemplate = s.welcomeText || '👋 *أهلاً ومرحباً بك يا* {user} *في جروب* {group}! 🥳✨\nنورتنا وشرفتنا يا غالي، نتمنى لك وقتاً ممتعاً معنا ❤️';
+          const welcomeMsg = welcomeTemplate
+            .replaceAll('{user}', '@' + digits)
+            .replaceAll('{group}', groupName);
+
+          const picUrl = await sock.profilePictureUrl(jid, 'image').catch(() => null);
+          if (picUrl) {
+            await sock.sendMessage(id, { image: { url: picUrl }, caption: welcomeMsg, mentions: [jid] }).catch(async () => {
+              await sock.sendMessage(id, { text: welcomeMsg, mentions: [jid] });
+            });
+          } else {
+            await sock.sendMessage(id, { text: welcomeMsg, mentions: [jid] });
+          }
+          continue;
+        }
+
+        // 👋 رسائل المغادرة بصورة البروفايل ومنشن العضو
+        if (action === 'remove' && (s.goodbye || s.goodbyeText)) {
+          const goodbyeTemplate = s.goodbyeText || '👋 *مع السلامة يا* {user}، هنفتقدك في جروب *{group}*! 🕊️\nفي رعاية الله وحفظه، بالتوفيق أينما كنت.';
+          const goodbyeMsg = goodbyeTemplate
+            .replaceAll('{user}', '@' + digits)
+            .replaceAll('{group}', groupName);
+
+          const picUrl = await sock.profilePictureUrl(jid, 'image').catch(() => null);
+          if (picUrl) {
+            await sock.sendMessage(id, { image: { url: picUrl }, caption: goodbyeMsg, mentions: [jid] }).catch(async () => {
+              await sock.sendMessage(id, { text: goodbyeMsg, mentions: [jid] });
+            });
+          } else {
+            await sock.sendMessage(id, { text: goodbyeMsg, mentions: [jid] });
+          }
+        }
       }
     } catch (err) {
       console.error('⚠️ خطأ في ترحيب/إدارة الأعضاء:', err.message);
@@ -269,18 +310,7 @@ function onConnectionUpdate(sock, { connection, lastDisconnect, qr }) {
     setTimeout(async () => {
       try {
         await sock.sendMessage(primaryOwnerJid, {
-          text: `🚀 *أهلاً بك يا ريس!* ⚡\n\nتم تشغيل وتحديث *${config.botName}* بنجاح وهو متصل وشغال 100% الآن!\n\n✨ *أبرز التحديثات التي تمت:*
-• ⚡ تسريع البحث باليوتيوب (Direct Scraper في 1 ثانية).
-• 🎨 دعم تعديل وتوليد الصور التلقائي بدون أي أخطاء 500.
-• 🧠 تفعيل الذكاء الاصطناعي الفائق (VEX Gemini).
-• 📱 99 أمراً نشطاً في 11 قسماً.
-
-💡 *جرب الآن من هاتفك الأوامر التالية:*
-• \`.menu\` (عرض القائمة التفاعلية الشاملة)
-• \`.yt لا اله الا الله\` (بحث فيديو يوتيوب مع أزرار التحميل)
-• \`.song عمرو دياب\` (بحث وتحميل الأغاني)
-• \`.image صورة رائد فضاء كرتوني\`
-• \`.فحص\` (تشغيل الفحص الشامل التلقائي المباشر لجميع الميزات)`,
+          text: `🚀 *أهلاً بك يا ريس!* ⚡\n\nتم تشغيل وتحديث *${config.botName}* بنجاح وهو متصل وشغال 100% الآن!\n\n✨ *أبرز التحديثات التي تمت:*\n• ⚡ تسريع البحث باليوتيوب (Direct Scraper في 1 ثانية).\n• 🎨 دعم تعديل وتوليد الصور التلقائي بدون أي أخطاء 500.\n• 🧠 تفعيل الذكاء الاصطناعي الفائق (VEX Gemini).\n• 📱 99 أمراً نشطاً في 11 قسماً.\n\n💡 *جرب الآن من هاتفك الأوامر التالية:*\n• \`.menu\` (عرض القائمة التفاعلية الشاملة)\n• \`.yt لا اله الا الله\` (بحث فيديو يوتيوب مع أزرار التحميل)\n• \`.song عمرو دياب\` (بحث وتحميل الأغاني)\n• \`.image صورة رائد فضاء كرتوني\`\n• \`.فحص\` (تشغيل الفحص الشامل التلقائي المباشر لجميع الميزات)`,
         });
       } catch (err) {
         console.warn('⚠️ تعذر إرسال رسالة الإقلاع للمالك:', err.message);

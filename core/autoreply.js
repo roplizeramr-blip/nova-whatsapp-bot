@@ -1,6 +1,6 @@
 import api from './api.js';
 import { chatWithAI, cleanForVoice, isErrorText } from './ai.js';
-import { dispatchToolAction } from './tool-caller.js';
+import { dispatchToolAction, extractImageUrl } from './tool-caller.js';
 import { TRIGGERS } from './persona.js';
 import {
   rememberMessage,
@@ -88,8 +88,8 @@ export async function maybeAutoReply(sock, m) {
   let text = m.body?.trim() ?? '';
 
   if (m.message?.audioMessage) {
-    // الخاص: يسمع تلقائيًا — الجروب: صوت بدون كلام متجاهل (عشان الزحمة)
-    if (m.isGroup) return;
+    // الخاص: يسمع تلقائيًا — الجروب: يسمع لو موجه للبوت (رد على رسالته أو منشن أو شات عام)
+    if (m.isGroup && !isAddressedToBot(sock, m)) return;
     console.log('🎙️ رسالة صوتية وصلت من:', m.pushName);
     let transcript = '';
     try {
@@ -130,7 +130,7 @@ export async function maybeAutoReply(sock, m) {
   if (!isAddressedToBot(sock, m)) return;
 
   // 🔗 لينك يوتيوب → أزرار تحميل فورية (من غير أوامر)
-  const ytMatch = text.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{6,})/);
+  const ytMatch = text.match(/(?:https?:/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{6,})/);
   if (ytMatch && !isVoiceInput) {
     const link = `https://www.youtube.com/watch?v=${ytMatch[1]}`;
     const caches = db.get('linkCache', {});
@@ -199,9 +199,9 @@ export async function maybeAutoReply(sock, m) {
   // 💭 ترحيب العائد بعد غياب
   const isReturnee = away > 24 && (profile.memories?.length || profile.name);
 
-  // ⌨️ مؤشر الكتابة — إحساس بشري
+  // ⌨️ مؤشر الكتابة — إحساس بشري سريع
   try { await sock.sendPresenceUpdate('composing', m.jid); } catch {}
-  await sleep(600);
+  await sleep(150);
 
   const wantsVoice = /(?:اتكلم|بصوت|صوتك|قولها|انطق)/i.test(text);
   const isLaughing = /ه{3,}|😂{2,}|🤣{2,}/.test(text);
@@ -220,19 +220,17 @@ export async function maybeAutoReply(sock, m) {
     return;
   }
 
-  // 👁️ رؤية الصور للمحادثة العامة: صورة + كلام في الخاص → يوصفها بالذكاء ويجاوب عليها
+  // 👁️ رؤية وفهم الصور للمحادثة العامة: صورة مرفقة أو مقتبسة في الخاص أو الجروبات
   let visionHint = '';
-  if (!m.isGroup && hasImage) {
-    try {
-      const url = await imageToUrl(m);
-      if (url) {
-        const desc = await api.img2prompt(url).catch(() => null);
-        if (desc?.arabic) {
-          visionHint = `بعت لك صورة، وده وصفها بالذكاء الاصطناعي: "${desc.arabic.slice(0, 300)}". وكلامه مع الصورة: "${text}". جاوبه على اللي بيسأله عن الصورة.`;
-        }
+  try {
+    const imgUrl = await extractImageUrl(m);
+    if (imgUrl) {
+      const desc = await api.img2prompt(imgUrl).catch(() => null);
+      if (desc?.arabic) {
+        visionHint = `المستخدم بعت لك صورة (أو اقتبس صورة)، وده وصفها بالذكاء الاصطناعي: "${desc.arabic.slice(0, 300)}". وكلامه مع الصورة: "${text}". جاوبه على سؤاله أو تفاعل مع الصورة بذكاء وبالمصري.`;
       }
-    } catch {}
-  }
+    }
+  } catch {}
   const extra = [awayExtra, visionHint].filter(Boolean).join(' ');
 
   // ⚡ كاش الردود المتشابهة — نفس السؤال في 10 دقايق = رد فوري (بدون صور)

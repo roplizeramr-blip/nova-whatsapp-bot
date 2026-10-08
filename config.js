@@ -42,8 +42,8 @@ export const config = {
   groqModel: env('GROQ_MODEL', 'qwen/qwen3.8-27b'),
   sttModel: env('STT_MODEL', 'whisper-large-v3'),
 
-  // 🎙️ الصوت الافتراضي: آدم (ElevenLabs عبر VEX) — ناطق طبيعي بالعربي والمصري فائق الجودة
-  ttsVoice: env('TTS_VOICE', 'adam'),
+  // 🎙️ الصوت الافتراضي: أنتوني (ElevenLabs عبر VEX) — ناطق مصري سريع وطبيعي (650ms)
+  ttsVoice: env('TTS_VOICE', 'antoni'),
 };
 
 // 💚 الأصدقاء المقربين — لكل واحد أسلوب خاص مع استرو
