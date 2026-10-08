@@ -1,17 +1,14 @@
 import { sendQuickReplies } from '../../core/send.js';
 import { db } from '../../core/db.js';
-import { grantWin, getEco, saveEco } from '../../core/economy.js';
+import { grantWin, grantLoss, getEco, saveEco } from '../../core/economy.js';
 
-const MAX = 50;   // الرقم من 1 لـ 50
-const TRIES = 6;  // عدد المحاولات
+const MAX = 50;   // نطاق الرقم من 1 لـ 50
+const TRIES = 6;  // عدد المحاولات المتاحة
 
 function state() {
   return db.get('guess', {});
 }
 
-// ⚠️ اللعبة كانت متخزّنة بالشات (m.jid) — في جروب لو أحد بدأ وحد تاني خمّن،
-// اللي بيخسر هو صاحب اللعبة الأصلي (لأن المحاولات والرصيد بتاعته)، ولما
-// تنتهي اللعبة بتتمسح من تحت رجله. المفروض كل واحد ولديه لعبة.
 function gameKey(m) {
   return `${m.jid}::${m.identityKey ?? m.sender}`;
 }
@@ -20,121 +17,186 @@ function statKey(m) {
   return m.identityKey ?? m.sender;
 }
 
-function showGame(sock, m, game, hint) {
-  const lines = [
-    '🔢 *لعبة التخمين*',
-    `أنا مخبي رقم من *1* لـ *${MAX}* — عنك *${game.left}* محاولة.`,
-  ];
-  if (hint) lines.push('', hint);
-  lines.push('', 'اكتب رقمك: `.guess 25` أو دوس زر وسط 👇');
+function getTemperature(guess, target) {
+  const diff = Math.abs(guess - target);
+  if (diff <= 2) return '🔥🔥🔥 *مولعة ناااار!* أنت على بُعد خطوتين بس من الرقم الصح!';
+  if (diff <= 5) return '🔥 *سخنة وقريبة جداً!* قربت من الهدف!';
+  if (diff <= 10) return '🌤️ *دافية!* في الاتجاه الصح، استمر!';
+  return '❄️ *باردة وبعيدة!* لسه قدامك مسافة.';
+}
 
-  // أزرار وسطية تساعد البداية
+function showGame(sock, m, game, hintText) {
+  const lines = [
+    `🔢 *لعبة تخمين الرقم السري* 🎯`,
+    `أنا مخبي رقم بين *1* و *${MAX}*`,
+    `فاضل ليك: *${game.left}* محاولات من ${TRIES}`,
+    `النطاق الحالي للرقم: [ من *${game.low}* إلى *${game.high}* ]`,
+  ];
+
+  if (hintText) {
+    lines.push('', hintText);
+  }
+
+  lines.push('', '💡 اكتب رقمك مباشرة في الشات (مثال: \`25\`) 👇');
+
   const mid = Math.floor((game.low + game.high) / 2);
+  const buttons = [
+    { label: `🎲 جرب المنتصف (${mid})`, id: `.guess ${mid}` },
+    { label: '🏳️ استسلام', id: '.guess surrender' },
+  ];
+
   return sendQuickReplies(sock, m.jid, {
     title: `🔢 تخمين — فاضل ${game.left} محاولة`,
     text: lines.join('\n'),
-    buttons: [
-      { label: `🎲 جرب ${mid}`, id: `.guess ${mid}` },
-      { label: '🛑 استسلم', id: '.guess surrender' },
-    ],
+    buttons,
   });
 }
 
 export default {
   name: 'guess',
-  aliases: ['خمن', 'تخمين'],
-  description: 'خمن الرقم المخبي من 1 لـ 50 في 6 محاولات',
-  usage: '.guess  أو  .guess 25',
+  aliases: ['خمن', 'تخمين', 'الرقم_السري', 'خمن_الرقم'],
+  description: 'خمن الرقم السري من 1 إلى 50 بمؤشر الحرارة (ساخن/بارد) والجوائز الكبرى',
+  usage: '.guess  أو  اكتب الرقم مباشرة في الشات',
   async execute(sock, m, args) {
     const all = state();
     const gk = gameKey(m);
     const sk = statKey(m);
     let game = all[gk];
-    const num = Number(args[0]);
+    const rawArg = (args[0] ?? '').trim().toLowerCase();
 
-    // 💡 hint من المتجر: يكشف اتجاه الرقم مرة واحدة
-    if (args[0] === 'hint') {
-      if (!game) return m.reply('ابدأ لعبة الأول بـ `.guess`');
+    // 💡 استخدام تلميح مدفوع من المتجر
+    if (rawArg === 'hint' || rawArg === 'تلميح') {
+      if (!game) return m.reply('ابدأ لعبة الأول بـ `.guess` 🎯');
       const eco = getEco(sk);
-      if ((eco.hints ?? 0) < 1) return m.reply('مفيش تلميحات عندك — اشتري من `.shop`');
+      if ((eco.hints ?? 0) < 1) {
+        return m.reply('مافيش عندك تلميحات في حقيبتك — اشتريها من المتجر بـ `.shop` 🛒');
+      }
       eco.hints--;
       saveEco(sk, eco);
-      return m.reply(`💡 الرقم المخفي ${game.number > Math.floor((game.low + game.high) / 2) ? 'أكبر' : 'أصغر'} من ${Math.floor((game.low + game.high) / 2)} (باقي ليك ${eco.hints} تلميح)`);
+      const isBigger = game.number > Math.floor((game.low + game.high) / 2);
+      const mid = Math.floor((game.low + game.high) / 2);
+      return m.reply(`💡 *تلميح سري:* الرقم المطلوب *${isBigger ? 'أكبر من' : 'أصغر من أو يساوي'}* ${mid}\n(باقي في محفظتك ${eco.hints} تلميح)`);
     }
 
-    // استسلام
-    if (args[0] === 'surrender') {
-      if (!game) return m.reply('مفيش لعبة مستنياك — اكتب `.guess` وابدأ 🔢');
+    // 🏳️ استسلام
+    if (['surrender', 'استسلم', 'استسلام', 'stop', 'وقف', 'خروج'].includes(rawArg)) {
+      if (!game) return m.reply('مافيش لعبة شغالة باسمك دلوقتي! اكتب `.guess` وابدأ واحدة 🔢');
       delete all[gk];
       db.set('guess', all);
       return sendQuickReplies(sock, m.jid, {
-        title: '🏳️ سلّمت!',
-        text: `الرقم كان *${game.number}* 😄\nعايز ثأر؟ اكتب \`.guess\``,
+        title: '🏳️ استسلمت!',
+        text: `الرقم السري كان: *${game.number}* 🎯\nمعلش، المرة الجاية هتجيبها صح! 💪`,
         buttons: [{ label: '🔄 العب تاني', id: '.guess' }],
       });
     }
 
-    // مفيش لعبة → ابدأ واحدة (ولو بعت رقم مع البداية نحسبه محاولة)
+    const num = Number(rawArg);
+
+    // بدء لعبة جديدة إذا لم تكن موجودة
     if (!game) {
-      game = { number: 1 + Math.floor(Math.random() * MAX), left: TRIES, low: 1, high: MAX, by: sk, at: Date.now() };
+      game = {
+        number: 1 + Math.floor(Math.random() * MAX),
+        left: TRIES,
+        low: 1,
+        high: MAX,
+        by: sk,
+        at: Date.now(),
+      };
       all[gk] = game;
       db.set('guess', all);
-      if (!num) {
-        return showGame(sock, m, game, 'لعبة جديدة بدأت — يلا خمّن! 🎯');
+
+      if (!num || Number.isNaN(num)) {
+        return showGame(sock, m, game, '🎯 بدأت لعبة التخمين! خمّن رقمك الآن:');
       }
     }
 
-    // الرقم المطلوب مش رقم صالح
+    // فحص صلاحية الرقم المدخل
     if (!num || Number.isNaN(num) || num < 1 || num > MAX) {
-      return m.reply(`اكتب رقم من *1* لـ *${MAX}* — مثال: \`.guess 25\``);
+      return m.reply(`اكتب رقماً صالحاً بين *1* و *${MAX}* — مثال: \`.guess 25\``);
     }
 
     game.left--;
-    let hint;
+    const tempText = getTemperature(num, game.number);
 
+    // 🏆 حالة الفوز
     if (num === game.number) {
-      // كسب!
       const stats = db.get('guessStats', {});
       const me = stats[sk] ?? { win: 0, lose: 0 };
       me.win++;
       stats[sk] = me;
+
       delete all[gk];
       db.set('guess', all);
       db.set('guessStats', stats);
-      const coins = grantWin(sk, 15);
+
+      const attemptsUsed = TRIES - game.left;
+      let prizeCoins = 25;
+      if (attemptsUsed === 1) prizeCoins = 100; // أسطوري!
+      else if (attemptsUsed === 2) prizeCoins = 60;
+      else if (attemptsUsed === 3) prizeCoins = 40;
+
+      const totalCoins = grantWin(sk, prizeCoins);
+
+      const winMsg = [
+        `🎉 *يا عبقري يا لعيب! خمنت الرقم الصح!* 🎯`,
+        `الرقم السري هو: *${game.number}* ✅`,
+        `جبتها في المحاولة رقم: *${attemptsUsed}* من ${TRIES}! 🔥`,
+        ``,
+        `💰 كسبت: *+${prizeCoins} عملة* (رصيدك الإجمالي: ${totalCoins})`,
+        `📊 سجلّك: ${me.win} فوز • ${me.lose} خسارة`,
+      ].join('\n');
+
       return sendQuickReplies(sock, m.jid, {
-        title: `🎉 برافو! الرقم هو *${game.number}*`,
-        text: `خمنته و*فاضل ${game.left} محاولة* بس! 🔥\n💰 +${coins} عملة\n📊 انتصاراتك: ${me.win} • خساراتك: ${me.lose}`,
-        buttons: [{ label: '🔄 العب تاني', id: '.guess' }],
+        title: `🎉 فوز بطل في التخمين!`,
+        text: winMsg,
+        buttons: [
+          { label: '🔄 العب جولة تانية', id: '.guess' },
+          { label: '🎮 ألعاب تانية', id: '.games' },
+        ],
       });
     }
 
+    // تعديل النطاق ومؤشر الاتجاه
+    let directionHint = '';
     if (num < game.number) {
       game.low = Math.max(game.low, num + 1);
-      hint = `⬆️ *أكبر* من ${num}!`;
+      directionHint = `⬆️ الرقم المطلوب *أكبر* من ${num}!\n${tempText}`;
     } else {
       game.high = Math.min(game.high, num - 1);
-      hint = `⬇️ *أصغر* من ${num}!`;
+      directionHint = `⬇️ الرقم المطلوب *أصغر* من ${num}!\n${tempText}`;
     }
 
+    // 💀 حالة الخسارة بانتهاء المحاولات
     if (game.left <= 0) {
       const stats = db.get('guessStats', {});
       const me = stats[sk] ?? { win: 0, lose: 0 };
       me.lose++;
       stats[sk] = me;
+
       delete all[gk];
       db.set('guess', all);
       db.set('guessStats', stats);
+      grantLoss(sk);
+
+      const loseMsg = [
+        `💀 *خلصت كل محاولاتك للأسف!*`,
+        `الرقم السري كان: *${game.number}* 🎯`,
+        `📊 سجلّك: ${me.win} فوز • ${me.lose} خسارة`,
+        `ما تزعلش — جرب تاني وتوقع صح! 💪`,
+      ].join('\n');
+
       return sendQuickReplies(sock, m.jid, {
-        title: `💀 خلصت المحاولات! الرقم كان *${game.number}*`,
-        text: `📊 انتصاراتك: ${me.win} • خساراتك: ${me.lose}\nماتقلقش — تاني هتوصلها!`,
-        buttons: [{ label: '🔄 العب تاني', id: '.guess' }],
+        title: '💀 انتهت المحاولات!',
+        text: loseMsg,
+        buttons: [{ label: '🔄 جرب تاني', id: '.guess' }],
       });
     }
 
+    // حفظ واستمرار اللعبة
     game.at = Date.now();
     all[gk] = game;
     db.set('guess', all);
-    return showGame(sock, m, game, hint);
+
+    return showGame(sock, m, game, directionHint);
   },
 };
