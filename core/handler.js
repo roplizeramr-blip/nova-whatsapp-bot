@@ -122,6 +122,7 @@ export async function handleUpsert(sock, ctx, { messages, type }) {
 
       const m = buildContext(sock, msg, message, body);
       bump('messages');
+      console.log(`📩 [${m.isGroup ? 'جروب' : 'خاص'}] رسالة من ${m.pushName || 'مستخدم'} (${m.sender?.split('@')[0]}): "${m.body?.slice(0, 60)}"`);
 
       // 😴 لو البوت مقفول في الشات ده (عدا المالك)
       if (db.get('botOff', {})[m.jid] && !isOwner(m, config)) continue;

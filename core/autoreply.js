@@ -127,8 +127,6 @@ export async function maybeAutoReply(sock, m) {
     // كلام كتير أوي (أغنية/محاضرة) — ناخد أول 800 حرف ونرد عادي
     text = text.slice(0, 800);
   }
-  if (!isAddressedToBot(sock, m)) return;
-
   // 🔗 لينك يوتيوب → أزرار تحميل فورية (من غير أوامر)
   const ytMatch = text.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{6,})/);
   if (ytMatch && !isVoiceInput) {
@@ -219,6 +217,9 @@ export async function maybeAutoReply(sock, m) {
     chillTick(key);
     return;
   }
+
+  // 🗣️ لو في جروب ومفيش منشن أو نداء للبوت ولا أداة مطلوبة → متتدخلش في دردشة الناس
+  if (!isAddressedToBot(sock, m)) return;
 
   // 👁️ رؤية وفهم الصور للمحادثة العامة: صورة مرفقة أو مقتبسة في الخاص أو الجروبات
   let visionHint = '';

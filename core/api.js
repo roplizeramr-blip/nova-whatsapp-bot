@@ -676,6 +676,12 @@ export const api = {
     return d.results ?? d.data ?? [];
   },
 
+  // 🧠 شات مونتي فائق الذكاء والسرعة — VEX Monte AI (2-3s)
+  async vexMonte(prompt) {
+    const d = await vexGet('/api/ai/gptimg', { action: 'chat', text: prompt }, 15000);
+    return d.result ?? d.reply ?? d.data?.result ?? d.data?.reply ?? '';
+  },
+
   // 🤖 جيميناي السريع فائق الاستجابة — VEX Gemini
   async vexGemini(prompt) {
     const d = await vexGet('/api/ai/gemini', { prompt }, 25000);

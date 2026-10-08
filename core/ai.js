@@ -187,10 +187,13 @@ export function polishReply(reply, { allowLong = false } = {}) {
   t = t.replace(/\s{2,}/g, ' ');
 
   // "أنا مجرد بوت" → "أنا استرو" — بدون ما ناكل باقي الجملة
-  // ⚠️ \b في جافاسكربت مش بيعمل حدود جنب الحروف العربية (word chars هي
-  // [A-Za-z0-9_] بس) فالاستبدال ما كانش بيشتغل أبدًا. بنستخدم حدود
-  // يونيكود: ممنوع حرف عربي/رقم قبل "أنا" أو بعد اسم النظام.
   t = t.replace(/(?<![\p{L}\p{N}])أنا\s+(?:مجرد\s+|بس\s+|في\s+الأساس\s+)?(?:بوت|روبوت|ذكاء\s+اصطناعي|برنامج|كود|نظام)(?![\p{L}])/gu, 'أنا استرو');
+
+  // تصفية أية توقيعات محركات خارجية (Monte AI / Johan)
+  t = t.replace(/Monte AI/gi, 'استرو')
+       .replace(/Monte Dev/gi, 'أدهم')
+       .replace(/\n*[*_]*حابب أقولك كمان إني بقدر أولد لك صور[\s\S]*$/i, '')
+       .replace(/\n*[*_]*للتذكير:\s*إذا كنت ترغب في توليد صورة[\s\S]*$/i, '');
 
   t = t.replace(/\n{3,}/g, '\n\n').trim();
 
@@ -414,7 +417,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     }
   }
 
-  // 2) 💎 VEX Gemini — محرك فائق السرعة والاستقرار (استجابة سريعة في 2-3 ثواني)
+  // 2) 💎 VEX Monte AI — محرك فائق السرعة والاستقرار (استجابة في 2 ثانية وشخصية مصرية عبقرية)
   try {
     let identityContext = '';
     if (isDev) {
@@ -429,22 +432,37 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
 
     const briefStyle = isInsult
       ? 'أنت استرو، بوت مصري ساخر. رد باستهزاء مصري قاهر ومضحك في جملة واحدة بدون شتائم صريحة.'
-      : 'أنت استرو، بوت واتساب مصري ذكي وجدع وشغال في كل حاجة. جاوب بالمصري العامي باختصار ولطافة وبدون مقدمات طويلة وبدون أن تقول أنا نموذج لغوي أو ذكاء اصطناعي أو تم تطويري بواسطة جوجل. قاعدة حاسمة: ممنوع نهائياً اختراع أو تخمين أي أسماء أشخاص لم تُذكر في المحادثة مطلقاً، وإذا سألك شخص عن اسمه ولم يكن مسجلاً، اسأله بلباقة.';
+      : 'أنت استرو، صاحب مصري جدع من وسط البلد. جاوب بالمصري العامي باختصار ولطافة وبدون مقدمات طويلة وبدون أن تقول أنا نموذج لغوي أو ذكاء اصطناعي أو تم تطويري بواسطة أي شركة. أنت صاحبهم استرو. ممنوع اختراع أسماء لم تذكر.';
 
     const recentConvo = convo.slice(-3).map((c) => `${c.role === 'assistant' ? 'استرو' : 'المستخدم'}: ${c.content}`).join('\n');
     const convoContext = recentConvo ? `\n[سياق المحادثة السابقة]:\n${recentConvo}\n` : '';
 
-    const vexPrompt = `${briefStyle}${identityContext}${convoContext}\n[المستخدم (${contact?.name || (isDev ? 'أدهم المطور' : profile?.name) || 'صديق'})]: ${text}`;
-    const vexReply = await api.vexGemini(vexPrompt);
-    if (vexReply?.trim()) {
-      let clean = polishReply(vexReply, { allowLong });
+    const aiPrompt = `${briefStyle}${identityContext}${convoContext}\n[المستخدم (${contact?.name || (isDev ? 'أدهم المطور' : profile?.name) || 'صاحبي'})]: ${text}`;
+    const monteReply = await api.vexMonte(aiPrompt);
+    if (monteReply?.trim()) {
+      let clean = polishReply(monteReply, { allowLong });
       if (isDev && /(?:مش عارفك|لا أعرفك|مين انت|من أنت|لا أستطيع معرفتك)/i.test(clean)) {
         clean = 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي 👑❤️ أؤمرني يا ريس، كل طلباتك مجابة!';
       }
+      if (!isErrorText(clean)) return { reply: clean, engine: 'vex-monte' };
+    }
+  } catch (err) {
+    console.warn('⚠️ VEX Monte AI تعذر، جاري تجربة المحرك الاحتياطي:', err.message?.slice(0, 80));
+  }
+
+  // 3) 💎 VEX Gemini — احتياطي سريع
+  try {
+    const briefStyle = isInsult
+      ? 'أنت استرو، بوت مصري ساخر. رد باستهزاء مصري قاهر ومضحك في جملة واحدة بدون شتائم صريحة.'
+      : 'أنت استرو، صاحب مصري جدع. جاوب بالمصري العامي باختصار.';
+    const vexPrompt = `${briefStyle}\n[المستخدم]: ${text}`;
+    const vexReply = await api.vexGemini(vexPrompt);
+    if (vexReply?.trim()) {
+      let clean = polishReply(vexReply, { allowLong });
       if (!isErrorText(clean)) return { reply: clean, engine: 'gemini-vex' };
     }
   } catch (err) {
-    console.warn('⚠️ VEX Gemini تعذر، جاري تجربة المحرك الاحتياطي:', err.message?.slice(0, 80));
+    console.warn('⚠️ VEX Gemini تعذر:', err.message?.slice(0, 80));
   }
 
   // 3) Engez ChatGPT / Copilot — احتياطي بمهلة قصيرة
