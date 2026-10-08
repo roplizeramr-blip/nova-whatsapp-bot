@@ -1,66 +1,104 @@
-import { sendQuickReplies, sendText } from '../../core/send.js';
+import { sendQuickReplies, sendText, sendImage } from '../../core/send.js';
 import { downloadYoutube } from '../../core/yt.js';
 import { toOggOpus } from '../../core/fetchmedia.js';
 import api from '../../core/api.js';
 import { db } from '../../core/db.js';
 
-// 🎵 .song — ابحث عن أغنية → اختار من الأزرار → تبعتلك الصوت
+// 🎵 .song — محمّل الأغاني والمهرجانات الذكي المتطور
+// يدعم: ريكورد PTT، ملف MP3، مستند، وفيديو 360/720 مع صور الغلاف والبيانات الكاملة
 
 function cache() {
   return db.get('searchCache', {});
 }
 
-function saveCache(jid, results) {
+export function saveSongCache(jid, results) {
   const all = cache();
   all[jid] = { type: 'song', results, at: Date.now() };
   db.set('searchCache', all);
 }
 
-function loadCache(jid, type) {
+export function loadSongCache(jid) {
   const c = cache()[jid];
-  if (!c || c.type !== type || Date.now() - c.at > 5 * 60 * 1000) return null;
+  if (!c || c.type !== 'song' || Date.now() - c.at > 10 * 60 * 1000) return null;
   return c.results;
+}
+
+/**
+ * إرسال كارت تفاصيل التراك وخيارات الجودة المباشرة
+ */
+export async function showSongChoices(sock, jid, r, idx = 0) {
+  const caption = [
+    `🎵 *${r.title}*`,
+    ``,
+    `⏱️ *المدة:* ${r.duration || 'غير محدد'}`,
+    `👤 *القناة / الفنان:* ${r.author || 'غير معروف'}`,
+    `🔗 *الرابط:* ${r.url}`,
+    ``,
+    `اختار الصيغة أو الجودة اللي تناسبك من الأزرار بالأسفل 👇`,
+  ].join('\n');
+
+  if (r.thumbnail) {
+    try {
+      await sendImage(sock, jid, r.thumbnail, caption);
+    } catch {
+      await sendText(sock, jid, caption);
+    }
+  } else {
+    await sendText(sock, jid, caption);
+  }
+
+  const buttons = [
+    { label: '🎙️ ريكورد صوتي PTT', id: `.song dl-${idx}-ptt` },
+    { label: '🎧 ملف صوتي MP3', id: `.song dl-${idx}-audio` },
+    { label: '📁 مستند صوتي Doc', id: `.song dl-${idx}-doc` },
+    { label: '🎬 فيديو 360p', id: `.song dl-${idx}-360` },
+    { label: '🎬 فيديو 720p HD', id: `.song dl-${idx}-720` },
+  ];
+
+  return sendQuickReplies(sock, jid, {
+    title: '🎵 خيارات التحميل المباشر',
+    text: 'اضغط على الصيغة المطلوبة ليبدأ التحميل فوراً ⚡',
+    buttons,
+  });
 }
 
 export default {
   name: 'song',
-  aliases: ['اغنية', 'أغنية'],
-  description: 'حمّل أي أغنية صوت — .song اسم الأغنية',
-  usage: '.song عمرو دياب خليك معايا',
+  aliases: ['اغنية', 'أغنية', 'مهرجان', 'تراك', 'شغل', 'تحميل_اغنية'],
+  description: 'تحميل أي أغنية أو مهرجان بصوت عالي النقاء، ريكورد PTT، أو فيديو — .song اسم الأغنية',
+  usage: '.song عمرو دياب | .song مهرجان اندال',
   async execute(sock, m, args) {
     const text = args.join(' ').trim();
 
     // اختيار من النتايج المحفوظة: .song dl-<رقم> → أزرار الجودة، وبعدين dl-<رقم>-<صيغة>
-    const pick = /^dl-(\d)(?:-(audio|360|720))?$/.exec(text);
+    const pick = /^dl-(\d)(?:-(ptt|audio|doc|360|720))?$/.exec(text);
     if (pick) {
-      const results = loadCache(m.jid, 'song');
+      const results = loadSongCache(m.jid);
       const idx = Number(pick[1]);
       const r = results?.[idx];
-      if (!r) return m.reply('⌛ النتايج قديمة — ابحث تاني: `.song اسم الأغنية`');
+      if (!r) return m.reply('⌛ انتهت صلاحية نتائج البحث — ابحث من جديد: `.song اسم الأغنية`');
 
-      // أول ضغطة → أزرار الجودة
+      // أول ضغطة → إرسال كارت الغلاف وأزرار الجودة
       if (!pick[2]) {
-        return sendQuickReplies(sock, m.jid, {
-          title: `🎵 ${r.title.slice(0, 40)}`,
-          text: `${r.duration ? `🕒 ${r.duration} • ` : ''}${r.author ?? ''}\n\nاختار الصيغة اللي عايزها 👇`,
-          buttons: [
-            { label: '🎧 صوت (خفيف)', id: `.song dl-${idx}-audio` },
-            { label: '🎬 فيديو 360', id: `.song dl-${idx}-360` },
-            { label: '🎬 فيديو 720', id: `.song dl-${idx}-720` },
-          ],
-        });
+        return showSongChoices(sock, m.jid, r, idx);
       }
 
       const format = pick[2];
-      const isAudio = format === 'audio';
-      await sendText(sock, m.jid, `⏳ بجيب ${isAudio ? 'الصوت' : 'الفيديو'}… استنى شوية`);
+      const isVideo = format === '360' || format === '720';
+      const isPtt = format === 'ptt';
+      const isDoc = format === 'doc';
+      const isAudio = !isVideo;
 
-      // ⚠️ كان بيرجّع لينك من API (savenow.to) اللي بقى صفحات إعلانات
-      // فـ sendAudio كان بينزّل HTML وبيفشل. دلوقتي yt-dlp بينزّل الملف
-      // مباشرة والـAPI بقي احتياط.
+      let waitLabel = 'الصوت';
+      if (isPtt) waitLabel = 'الريكورد الصوتي';
+      else if (isDoc) waitLabel = 'المستند الصوتي';
+      else if (isVideo) waitLabel = `الفيديو (${format === '720' ? '720p HD' : '360p'})`;
+
+      await sendText(sock, m.jid, `⏳ جاري تحميل ${waitLabel} لأغنية:\n*${r.title}*... ثواني يا فنان! 🚀`);
+
       let buffer;
       try {
-        buffer = await downloadYoutube(r.url, isAudio ? 'audio' : 'video', {
+        buffer = await downloadYoutube(r.url, isVideo ? 'video' : 'audio', {
           height: format === '720' ? 720 : 360,
         });
       } catch (err) {
@@ -78,60 +116,85 @@ export default {
         }
         if (!buffer) {
           return m.reply(
-            '😵 مقدرش أجيب الملف ده من يوتيوب.\n' +
-              '💡 جرّب أغنية تانية، أو جرب البحث بكلمات أدق 🎧',
+            '😵 تعذر جلب هذا المقطع حالياً من يوتيوب.\n' +
+              '💡 جرب كلمات أدق أو اسم مطرب محدد 🎧',
           );
         }
       }
 
+      const safeTitle = (r.title ?? 'audio').replace(/[\\/:*?"<>|]/g, '').slice(0, 40);
       const caption = `${isAudio ? '🎵' : '🎬'} *${r.title ?? ''}*\n⚡ بواسطة *استرو بـوت*`;
+
+      // 1) إرسال كـ Voice Note (PTT)
+      if (isPtt) {
+        const ogg = await toOggOpus(buffer).catch(() => null);
+        return sock.sendMessage(m.jid, {
+          audio: ogg ?? buffer,
+          mimetype: 'audio/ogg; codecs=opus',
+          ptt: true,
+        }, { quoted: m.msg });
+      }
+
+      // 2) إرسال كـ Document MP3
+      if (isDoc) {
+        return sock.sendMessage(m.jid, {
+          document: buffer,
+          mimetype: 'audio/mpeg',
+          fileName: `${safeTitle}.mp3`,
+          caption,
+        }, { quoted: m.msg });
+      }
+
+      // 3) إرسال كـ ملف صوتي عادي
       if (isAudio) {
         const ogg = await toOggOpus(buffer).catch(() => null);
         return sock.sendMessage(m.jid, {
           audio: ogg ?? buffer,
           mimetype: ogg ? 'audio/ogg; codecs=opus' : 'audio/mpeg',
-          fileName: `${(r.title ?? 'audio').slice(0, 40)}.mp3`,
+          fileName: `${safeTitle}.mp3`,
           caption,
         }, { quoted: m.msg });
       }
+
+      // 4) إرسال كـ فيديو
       return sock.sendMessage(m.jid, {
         video: buffer,
         mimetype: 'video/mp4',
-        fileName: `${(r.title ?? 'video').slice(0, 40)}.mp4`,
+        fileName: `${safeTitle}.mp4`,
         caption,
       }, { quoted: m.msg });
     }
 
     if (!text) {
       return sendQuickReplies(sock, m.jid, {
-        title: '🎵 محمّل الأغاني',
-        text: 'اكتب اسم الأغنية، مثال:\n`.song عمرو دياب خليك معايا`\n\nولو عايز فيديو: `.video اسم الفيديو`',
+        title: '🎵 محمّل الأغاني والمهرجانات الذكي',
+        text: 'اكتب اسم الأغنية أو المهرجان، مثال:\n`.song مهرجان اندال`\n`.song عمرو دياب خليك معايا`',
         buttons: [
-          { label: '🎤 عمرو دياب', id: '.song عمرو دياب خليك معايا' },
-          { label: '🎸 انا بتبعني', id: '.song انا بتبعني احمد سعيد' },
+          { label: '🔥 مهرجان اندال', id: '.song مهرجان اندال اندال' },
+          { label: '🎤 عمرو دياب', id: '.song عمرو دياب يا انا يا لا' },
         ],
       });
     }
 
-    await sendText(sock, m.jid, `🔍 بدور على: *${text}*...`);
+    await sendText(sock, m.jid, `🔍 جاري البحث في يوتيوب عن: *${text}*... ⏳`);
     const results = await api.ytSearch(text, 5);
-    if (!results.length) return m.reply('😕 ملقيتش حاجة — جرب كلمات تانية');
+    if (!results || !results.length) return m.reply('😕 ملقيتش نتائج مطابقة — جرب كلمات بحث تانية.');
 
-    saveCache(m.jid, results);
-    await sendQuickReplies(sock, m.jid, {
-      title: '🎵 اختار الأغنية',
-      text: 'دوس على اللي عايزها وهبعتلك الصوت 👇',
-      sections: [
-        {
-          title: 'نتايج البحث',
-          rows: results.map((r) => ({
-            title: `🎵 ${String(r.title).slice(0, 22)}`,
-            description: `${r.duration ?? ''} ${r.author ? '• ' + r.author : ''}`,
-            id: `.song dl-${r.index}`,
-          })),
-        },
-      ],
-      selectTitle: '🎧 اختار الأغنية',
-    });
+    saveSongCache(m.jid, results);
+
+    // عرض أول نتيجة مباشرة مع كارت التفاصيل والأزرار التفاعلية
+    const topResult = results[0];
+    await showSongChoices(sock, m.jid, topResult, 0);
+
+    // إذا وُجدت نتائج أخرى، نعرض قائمة منسدلة بالاختيارات البديلة
+    if (results.length > 1) {
+      await sendQuickReplies(sock, m.jid, {
+        title: `🎵 نتائج أخرى لـ "${text.slice(0, 25)}"`,
+        text: 'تقدر تختار أي تراك تاني من نتائج البحث 👇',
+        sections: [
+          {\r\n            title: 'باقي نتائج يوتيوب',\r\n            rows: results.slice(1).map((r, i) => ({\r\n              title: `🎵 ${String(r.title).slice(0, 24)}`,\r\n              description: `${r.duration ?? ''} ${r.author ? '• ' + r.author : ''}`,\r\n              id: `.song dl-${i + 1}`,\r\n            })),\r\n          },\r\n        ],
+        selectTitle: '🔍 تصفح باقي النتائج',
+      });
+    }
   },
 };
