@@ -133,7 +133,10 @@ export async function startBot() {
     const now = Date.now();
     if (now - lastGroupFetch < 60000 && cachedGroups.length) return cachedGroups;
     try {
-      const groups = await Promise.race([\n        sock.groupFetchAllParticipating(),\n        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500)),\n      ]);
+      const groups = await Promise.race([
+        sock.groupFetchAllParticipating(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500)),
+      ]);
       cachedGroups = Object.values(groups || {}).map((g) => ({ subject: g.subject, size: g.participants?.length ?? 0 }));
       lastGroupFetch = now;
       return cachedGroups;
@@ -179,7 +182,7 @@ export async function startBot() {
   // 🔔 تنبيه المالك بأخطاء الـ API الحرجة (لو رقمه متسجل)
   const ownerNum = config.owners?.[0];
   if (ownerNum) {
-    const ownerJid = `${String(ownerNum).replace(/\\D/g, '')}@s.whatsapp.net`;
+    const ownerJid = `${String(ownerNum).replace(/\D/g, '')}@s.whatsapp.net`;
     setOwnerNotifier((text) => {
       sock.sendMessage(ownerJid, { text }).catch(() => {});
     });
@@ -215,14 +218,17 @@ export async function startBot() {
             await sock.groupParticipantsUpdate(id, [jid], 'remove').catch((err) => {
               console.warn('⚠️ تعذرت إزالة عضو محظور:', err.message?.slice(0, 70));
             });
-            await sock.sendMessage(id, {\n              text: `🚫 تمت إزالة @${digits} من القائمة السوداء. (ملاحظة: واتساب لا يمنع إعادة الدعوة نهائيًا)`,\n              mentions: [jid],\n            }).catch(() => {});
+            await sock.sendMessage(id, {
+              text: `🚫 تمت إزالة @${digits} من القائمة السوداء. (ملاحظة: واتساب لا يمنع إعادة الدعوة نهائيًا)`,
+              mentions: [jid],
+            }).catch(() => {});
             continue;
           }
         }
 
         // 👑 تنبيه الترقية لأدمن مع صورة البروفايل
         if (action === 'promote') {
-          const promoteMsg = `🎉 *ألف مبروك الترقية يا* @${digits}! 👑✨\\nتمت ترقيتك لمشرف وأدمن في جروب *${groupName}* — منور الإدارة وبالتوفيق يا كبير!`;
+          const promoteMsg = `🎉 *ألف مبروك الترقية يا* @${digits}! 👑✨\nتمت ترقيتك لمشرف وأدمن في جروب *${groupName}* — منور الإدارة وبالتوفيق يا كبير!`;
           const picUrl = await getPic();
           if (picUrl) {
             await sock.sendMessage(id, { image: { url: picUrl }, caption: promoteMsg, mentions: [jid] }).catch(async () => {
@@ -250,7 +256,7 @@ export async function startBot() {
 
         // 👋 رسائل الترحيب بصورة البروفايل ومنشن العضو
         if (action === 'add' && s.welcome !== false) {
-          const welcomeTemplate = s.welcomeText || '👋 *أهلاً ومرحباً بك يا* {user} *في جروب* {group}! 🥳✨\\nنورتنا وشرفتنا يا غالي، نتمنى لك وقتاً ممتعاً معنا ❤️';
+          const welcomeTemplate = s.welcomeText || '👋 *أهلاً ومرحباً بك يا* {user} *في جروب* {group}! 🥳✨\nنورتنا وشرفتنا يا غالي، نتمنى لك وقتاً ممتعاً معنا ❤️';
           const welcomeMsg = welcomeTemplate
             .replaceAll('{user}', '@' + digits)
             .replaceAll('{group}', groupName);
@@ -268,7 +274,7 @@ export async function startBot() {
 
         // 👋 رسائل المغادرة بصورة البروفايل ومنشن العضو
         if (action === 'remove' && (s.goodbye || s.goodbyeText)) {
-          const goodbyeTemplate = s.goodbyeText || '👋 *مع السلامة يا* {user}، هنفتقدك في جروب *{group}*! 🕊️\\nفي رعاية الله وحفظه، بالتوفيق أينما كنت.';
+          const goodbyeTemplate = s.goodbyeText || '👋 *مع السلامة يا* {user}، هنفتقدك في جروب *{group}*! 🕊️\nفي رعاية الله وحفظه، بالتوفيق أينما كنت.';
           const goodbyeMsg = goodbyeTemplate
             .replaceAll('{user}', '@' + digits)
             .replaceAll('{group}', groupName);
@@ -292,12 +298,12 @@ export async function startBot() {
 function onConnectionUpdate(sock, { connection, lastDisconnect, qr }) {
   // 🔢 ربط بكود الهاتف (لو مفعّل في الإعدادات)
   if (qr && config.pairingPhone && !sock.authState?.creds?.registered) {
-    const phone = String(config.pairingPhone).replace(/\\D/g, '');
+    const phone = String(config.pairingPhone).replace(/\D/g, '');
     sock.requestPairingCode(phone)
       .then((code) => {
         const pretty = code?.match(/.{1,4}/g)?.join('-') ?? code;
-        console.log(`\\n🔢 كود الربط: ${pretty}`);
-        console.log('اكتبه في: واتساب → الأجهزة المرتبطة → ربط ببكود الهاتف\\n');
+        console.log(`\n🔢 كود الربط: ${pretty}`);
+        console.log('اكتبه في: واتساب → الأجهزة المرتبطة → ربط ببكود الهاتف\n');
       })
       .catch((err) => console.error('❌ فشل توليد كود الربط:', err));
     return;
@@ -306,7 +312,7 @@ function onConnectionUpdate(sock, { connection, lastDisconnect, qr }) {
   // 📷 ربط برمز QR
   if (qr) {
     saveQr(qr);
-    console.log('\\n📲 افتح واتساب → الأجهزة المرتبطة → ربط جهاز، وامسح الكود ده:\\n');
+    console.log('\n📲 افتح واتساب → الأجهزة المرتبطة → ربط جهاز، وامسح الكود ده:\n');
     qrcode.generate(qr, { small: true });
   }
 
@@ -316,8 +322,8 @@ function onConnectionUpdate(sock, { connection, lastDisconnect, qr }) {
     resetReconnectBackoff();
     logoutRestarts = 0; // اتصلّنا بنجاح — عداد الـ logout يبدأ من جديد
     const number = sock.user?.id?.split(':')[0] ?? '';
-    console.log(`\\n✅ ${config.botName} ${config.botEmoji} شغال! (مرتبط بـ ${number})`);
-    console.log(`🧩 البادئة: ${config.prefix} — جرّب اكتب ${config.prefix}menu في أي شات\\n`);
+    console.log(`\n✅ ${config.botName} ${config.botEmoji} شغال! (مرتبط بـ ${number})`);
+    console.log(`🧩 البادئة: ${config.prefix} — جرّب اكتب ${config.prefix}menu في أي شات\n`);
     // 💾 مزامنة كل ملفات الجلسة مع قاعدة بيانات PostgreSQL السحابية فور فتح الاتصال
     syncSessionToDb(SESSION_DIR).catch(() => {});
 
@@ -326,7 +332,18 @@ function onConnectionUpdate(sock, { connection, lastDisconnect, qr }) {
     setTimeout(async () => {
       try {
         await sock.sendMessage(primaryOwnerJid, {
-          text: `🚀 *أهلاً بك يا ريس!* ⚡\\n\\nتم تشغيل وتحديث *${config.botName}* بنجاح وهو متصل وشغال 100% الآن!\\n\\n✨ *أبرز التحديثات التي تمت:*\n• ⚡ تسريع البحث باليوتيوب (Direct Scraper في 1 ثانية).\n• 🎨 دعم تعديل وتوليد الصور التلقائي بدون أي أخطاء 500.\n• 🧠 تفعيل الذكاء الاصطناعي الفائق (VEX Gemini).\n• 📱 99 أمراً نشطاً في 11 قسماً.\n\n💡 *جرب الآن من هاتفك الأوامر التالية:*\n• \\`.menu\\` (عرض القائمة التفاعلية الشاملة)\n• \\`.yt لا اله الا الله\\` (بحث فيديو يوتيوب مع أزرار التحميل)\n• \\`.song عمرو دياب\\` (بحث وتحميل الأغاني)\n• \\`.image صورة رائد فضاء كرتوني\\`\n• \\`.فحص\\` (تشغيل الفحص الشامل التلقائي المباشر لجميع الميزات)`,
+          text: `🚀 *أهلاً بك يا ريس!* ⚡\n\nتم تشغيل وتحديث *${config.botName}* بنجاح وهو متصل وشغال 100% الآن!\n\n✨ *أبرز التحديثات التي تمت:*
+• ⚡ تسريع البحث باليوتيوب (Direct Scraper في 1 ثانية).
+• 🎨 دعم تعديل وتوليد الصور التلقائي بدون أي أخطاء 500.
+• 🧠 تفعيل الذكاء الاصطناعي الفائق (VEX Gemini).
+• 📱 99 أمراً نشطاً في 11 قسماً.
+
+💡 *جرب الآن من هاتفك الأوامر التالية:*
+• \`.menu\` (عرض القائمة التفاعلية الشاملة)
+• \`.yt لا اله الا الله\` (بحث فيديو يوتيوب مع أزرار التحميل)
+• \`.song عمرو دياب\` (بحث وتحميل الأغاني)
+• \`.image صورة رائد فضاء كرتوني\`
+• \`.فحص\` (تشغيل الفحص الشامل التلقائي المباشر لجميع الميزات)`,
         });
       } catch (err) {
         console.warn('⚠️ تعذر إرسال رسالة الإقلاع للمالك:', err.message);
