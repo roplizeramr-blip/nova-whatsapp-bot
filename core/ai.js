@@ -2,6 +2,8 @@ import api from './api.js';
 import { db } from './db.js';
 import { isOpen, noteEmpty } from './api.js';
 import { chatGroqPrimary } from './groq-pool.js';
+import { chatInceptionPrimary } from './inception.js';
+import { AGENT_TOOLS_SPEC } from './agent-tools.js';
 import { PERSONA_FULL, FEW_SHOTS_FULL, PERSONA_COMPACT, LAYERS, MODES, RELATIONSHIPS, INSULT_DEFENSE, BOT_MOODS } from './persona.js';
 import { analyzeLocally, needsAiAnalysis } from './intent.js';
 import { findContact } from './identity.js';
@@ -170,10 +172,6 @@ export function isErrorText(text) {
 // 🧠 تحليل قبل الرد — نفس قواعد groqAnalyze: المزاج مفرداته مقفولة على
 // المفاتيح المعروفة عشان الماب الاحتياطي والتلميحات يلاقوا الكلمة دايمًا
 async function analyzeMessage(text) {
-  if (isGroqReady()) {
-    const a = await groqAnalyze(text);
-    if (a) return a;
-  }
   return null;
 }
 
@@ -406,12 +404,75 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
   const isInsult = isInsultText(text) && !contact;
   const roastInstruction = `${PERSONA_COMPACT}\n\n${INSULT_DEFENSE}\n\nالمهم دلوقتي: الرسالة دي إهانة ليك — رد عليه بقهر مصري حاد وسخرية في سطر واحد من غير سباب صريح.`;
 
-  // 🧠 Groq Brain الموحد (Qwen 3.8-27B) — العقل الرئيسي والوحيد للدردشة والرؤية الفورية مع تدوير المفاتيح
+  // 🧠 1) في حال وجود صورة مرفقة: التحويل المباشر لـ Groq Vision للتحليل البصري
+  if (image) {
+    try {
+      const res = await chatGroqPrimary({
+        system: isInsult ? roastInstruction : fullInstruction,
+        messages: [...convo, userMsg],
+        image,
+        maxTokens: allowLong ? 600 : (voice ? 200 : 380),
+        temperature: variants > 0 ? 0.85 : 0.65,
+        timeout: 15000,
+      });
+
+      if (res?.reply) {
+        let clean = polishReply(res.reply, { allowLong });
+        if (!isErrorText(clean)) {
+          return {
+            reply: clean,
+            rawReply: res.rawReply,
+            toolCalls: res.tools || [],
+            tools: res.tools || [],
+            engine: 'groq-vision',
+            speedMs: res.speedMs,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ [Groq Vision] تعذر تحليل الصورة:', err.message);
+    }
+  }
+
+  // 🧠 2) العقل الرئيسي: Inception Labs (Mercury 2.5) مع تفكير Medium واستدعاء الأدوات الذاتي
+  try {
+    const res = await chatInceptionPrimary({
+      system: isInsult ? roastInstruction : fullInstruction,
+      messages: [...convo, userMsg],
+      tools: AGENT_TOOLS_SPEC,
+      maxTokens: allowLong ? 900 : (voice ? 250 : 700),
+      temperature: variants > 0 ? 0.85 : 0.65,
+      timeout: 18000,
+    });
+
+    if (res) {
+      let clean = polishReply(res.reply || '', { allowLong });
+      if (isDev && /(?:مش عارفك|لا أعرفك|مين انت|من أنت|لا أستطيع معرفتك)/i.test(clean)) {
+        clean = 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي 👑❤️ أؤمرني يا ريس، كل طلباتك مجابة فوراً!';
+      }
+
+      // إذا كان هناك أداة تم استدعاؤها أو رد مفيد
+      if ((res.toolCalls && res.toolCalls.length > 0) || (!isErrorText(clean) && clean.length > 1)) {
+        return {
+          reply: clean,
+          rawReply: res.rawReply,
+          toolCalls: res.toolCalls || [],
+          tools: res.toolCalls || [],
+          reasoningTokens: res.reasoningTokens || 0,
+          speedMs: res.speedMs,
+          engine: res.engine || 'inception-mercury-2.5',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Inception Brain] خطأ في الاستدعاء، جاري التحويل الفوري لـ Groq:', err.message);
+  }
+
+  // 🧠 3) العقل البديل الفوري: Groq Key Pool (Qwen 3.8-27B) مع تدوير المفاتيح الثلاثة
   try {
     const res = await chatGroqPrimary({
       system: isInsult ? roastInstruction : fullInstruction,
       messages: [...convo, userMsg],
-      image,
       maxTokens: allowLong ? 600 : (voice ? 200 : 380),
       temperature: variants > 0 ? 0.85 : 0.65,
       timeout: 15000,
@@ -426,6 +487,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
         return {
           reply: clean,
           rawReply: res.rawReply,
+          toolCalls: res.tools || [],
           tools: res.tools || [],
           engine: 'groq-' + (res.model || 'qwen'),
           speedMs: res.speedMs,
@@ -434,7 +496,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
       }
     }
   } catch (err) {
-    console.warn('⚠️ [Groq Brain] تعذر استدعاء النموذج:', err.message);
+    console.warn('⚠️ [Groq Brain] تعذر استدعاء النموذج البديل:', err.message);
   }
 
   // 🛟 خط الأمان الفوري: رد استرو الفوري بشخصيته المصرية الذكية عند انقطاع الشبكة

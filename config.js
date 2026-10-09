@@ -38,8 +38,13 @@ export const config = {
   // ☁️ سيرفر الـ API
   apiBaseUrl: env('API_BASE_URL', 'https://engez.a7a.online'),
 
-  // 🧠 سيرفر وموديل Groq الموحد (Qwen 3.8-27B) — العقل الرئيسي والوحيد للدردشة والرؤية
-  aiPrimary: env('AI_PRIMARY', 'groq'),
+  // 🧠 سيرفر وموديل Inception Labs (Mercury 2.5) — العقل الرئيسي الأول بتفكير Medium
+  aiPrimary: env('AI_PRIMARY', 'inception'),
+  inceptionApiKey: env('INCEPTION_API_KEY', ''),
+  inceptionModel: env('INCEPTION_MODEL', 'mercury-2.5'),
+  inceptionReasoning: env('INCEPTION_REASONING', 'medium'),
+
+  // 🧠 سيرفر وموديل Groq (Qwen 3.8-27B) — العقل الاحتياطي الفوري والرؤية المباشرة للصور
   groqModel: env('GROQ_MODEL', 'qwen/qwen3.8-27b'),
   groqApiKeys: env('GROQ_API_KEYS', '')
     ? env('GROQ_API_KEYS').split(',').map((k) => k.trim()).filter(Boolean)

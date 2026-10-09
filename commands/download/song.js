@@ -24,10 +24,10 @@ export function loadSongCache(jid) {
 }
 
 /**
- * 1️⃣ عرض قائمة النتائج المتعددة للاختيار منها
+ * 1️⃣ عرض قائمة النتائج المتعددة في List Menu للاختيار منها
  */
 export async function showSearchResults(sock, jid, query, results) {
-  const top = results.slice(0, 4);
+  const top = results.slice(0, 5);
   const listText = [
     `🔍 *نتائج البحث في يوتيوب عن:* "${query.slice(0, 35)}"`,
     ``,
@@ -35,23 +35,33 @@ export async function showSearchResults(sock, jid, query, results) {
       `*${i + 1}️⃣* 🎵 *${r.title}*\n⏱️ *المدة:* ${r.duration || 'غير محدد'} • 👤 *الفنان:* ${r.author || 'يوتيوب'}`
     ),
     ``,
-    `👇 *اضغط على زر التراك المطلوب بالأسفل لعرض تفاصيله واختيار التحميل:*`,
+    `👇 *اضغط على زر القائمة بالأسفل لاختيار التراك المطلوب مباشرة:*`,
   ].join('\n');
 
-  const buttons = top.slice(0, 3).map((r, i) => ({
-    label: `${i + 1}️⃣ ${String(r.title).slice(0, 18)}`,
+  const rows = top.map((r, i) => ({
+    header: `${i + 1}️⃣`,
+    title: String(r.title).slice(0, 30),
+    description: `⏱️ ${r.duration || 'غير محدد'} • 👤 ${String(r.author || 'يوتيوب').slice(0, 20)}`,
     id: `.song pick-${i}`,
   }));
+
+  const sections = [
+    {
+      title: 'نتائج البحث في يوتيوب',
+      rows,
+    },
+  ];
 
   return sendQuickReplies(sock, jid, {
     title: '🎵 نتائج بحث الأغاني والمهرجانات',
     text: listText,
-    buttons,
+    sections,
+    selectTitle: '🎵 اختر الأغنية من القائمة',
   });
 }
 
 /**
- * 2️⃣ إرسال كارت تفاصيل التراك وصورة الغلاف وزري (صوت / فيديو)
+ * 2️⃣ إرسال كارت تفاصيل التراك وصورة الغلاف مع List Menu شامل للجودات
  */
 export async function showSongChoices(sock, jid, r, idx = 0) {
   const caption = [
@@ -61,7 +71,7 @@ export async function showSongChoices(sock, jid, r, idx = 0) {
     `👤 *القناة / الفنان:* ${r.author || 'غير معروف'}`,
     `🔗 *الرابط:* ${r.url}`,
     ``,
-    `👇 *اختار نوع التحميل المفضل (صوت أو فيديو):*`,
+    `👇 *اضغط على الزر بالأسفل لاختيار صيغة وجودة التحميل (صوت أو فيديو):*`,
   ].join('\n');
 
   const thumbUrl = r.thumbnail || (r.id ? `https://i.ytimg.com/vi/${r.id}/hqdefault.jpg` : null);
@@ -76,15 +86,30 @@ export async function showSongChoices(sock, jid, r, idx = 0) {
     await sendText(sock, jid, caption);
   }
 
-  const buttons = [
-    { label: '🎧 تحميل صوت (Audio)', id: `.song opt-${idx}-audio` },
-    { label: '🎬 تحميل فيديو (Video)', id: `.song opt-${idx}-video` },
+  const sections = [
+    {
+      title: '🎧 تحميل صوتي (Audio)',
+      rows: [
+        { header: '🎧', title: 'صوت MP3 عالي (320kbps)', description: 'ملف صوتي بأعلى نقاء وجودة', id: `.song dl-${idx}-audio` },
+        { header: '🎙️', title: 'ريكورد فويس نوت (PTT)', description: 'رسالة صوتية مباشرة بالمايك', id: `.song dl-${idx}-ptt` },
+        { header: '📁', title: 'مستند صوتي MP3 Document', description: 'حفظ كملف مستند في الجهاز', id: `.song dl-${idx}-doc` },
+      ],
+    },
+    {
+      title: '🎬 تحميل فيديو (Video)',
+      rows: [
+        { header: '🎬', title: 'فيديو دقة 720p HD', description: 'دقة عالية ممتازة للمشاهدة', id: `.song dl-${idx}-720` },
+        { header: '⚡', title: 'فيديو دقة 360p سريع', description: 'حجم خفيف وتنزيل سريع للباقات', id: `.song dl-${idx}-360` },
+        { header: '🌟', title: 'فيديو دقة 1080p FHD', description: 'أعلى دقة متوفرة على يوتيوب', id: `.song dl-${idx}-1080` },
+      ],
+    },
   ];
 
   return sendQuickReplies(sock, jid, {
-    title: '⚡ صيغة التحميل',
-    text: 'اضغط على نوع الملف المطلوب لعرض خيارات الجودة المتاحة 👇',
-    buttons,
+    title: '⚡ صيغة وجودة التحميل',
+    text: `🎵 *${String(r.title).slice(0, 35)}*\nاختر صيغة وجودة التحميل من القائمة أدناه 👇`,
+    sections,
+    selectTitle: '⚡ اختر صيغة وجودة التحميل',
   });
 }
 

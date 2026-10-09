@@ -173,21 +173,42 @@ export async function mainMenu(sock, jid, extra = '', ctx = null) {
 
   const fullText = textLines.join('\n');
 
-  // أزرار سريعة منظمة وفخمة بأهم الأقسام بدون تشتيت
-  const buttons = [
-    { label: '🤖 الذكاء الاصطناعي', id: '.menu ai' },
-    { label: '📥 التحميل والميديا', id: '.menu download' },
-    { label: '🎮 الألعاب والتحديات', id: '.menu games' },
-    { label: '💰 البنك والاقتصاد', id: '.menu economy' },
-    { label: '📂 كل الأقسام (11)', id: '.menu all' },
-    { label: '👑 لوحة المطور', id: '.owner' },
+  // قائمة منسدلة تفاعلية (List Menu) تضم كافة أقسام البوت الـ 11 المنظمة
+  const sections = [
+    {
+      title: '⭐ الأقسام الأكثر استخداماً',
+      rows: [
+        { header: '🤖', title: 'قسم الذكاء الاصطناعي', description: 'شات وتوليد صور وتحويل نصوص لصوت', id: '.menu ai' },
+        { header: '📥', title: 'قسم التحميل والوسائط', description: 'تيك توك، يوتيوب، انستجرام ومهرجانات', id: '.menu download' },
+        { header: '🎮', title: 'قسم الألعاب والتحديات', description: 'إكس أو، مسابقات، تخمين، المشنقة وحساب', id: '.menu games' },
+        { header: '💰', title: 'قسم البنك والاقتصاد', description: 'رصيد، وظائف، متجر، بنك وترتيب', id: '.menu economy' },
+      ],
+    },
+    {
+      title: '🛠️ الخدمات والإدارة',
+      rows: [
+        { header: '🛠️', title: 'قسم الأدوات والخدمات', description: 'صناعة ملصقات، ترجمة، طقس وفحص أرقام', id: '.menu tools' },
+        { header: '🛡️', title: 'قسم إدارة المجموعات', description: 'منشن جماعي، ترحيب وإعدادات الجروب', id: '.menu group' },
+        { header: '🚫', title: 'قسم الحماية والرقابة', description: 'طرد، كتم، إنذارات ومنع الروابط والسبام', id: '.menu protection' },
+        { header: '🎧', title: 'قسم الموسيقى والمحتوى', description: 'شازام للتعرف على الأغاني، كلمات وروايات', id: '.menu music' },
+        { header: '😂', title: 'قسم فرفشة وهزار', description: 'نكت مصرية، الشيشة، ومزاج رايق مع استرو', id: '.menu fun' },
+        { header: '📌', title: 'قسم معلومات عامة', description: 'كارت استرو، سرعة البوت، ودليل المساعدة', id: '.menu general' },
+        { header: '👑', title: 'قسم أوامر المطور', description: 'لوحة التحكم وإدارة النظام والسيرفر', id: '.owner' },
+      ],
+    },
+    {
+      title: '📖 خيارات إضافية',
+      rows: [
+        { header: '📖', title: 'دليل جميع الأوامر', description: 'عرض قائمة كافة أوامر البوت دفعة واحدة', id: '.menu all' },
+      ],
+    },
   ];
 
   return send(sock, jid, {
     title: '⚡ لوحة أوامر بـوت استرو',
     text: fullText,
-    buttons,
-    image: MENU_BANNER_URL,
+    sections,
+    selectTitle: '📋 اضغط لاختيار القسم',
   });
 }
 

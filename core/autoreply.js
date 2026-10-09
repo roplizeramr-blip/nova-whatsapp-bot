@@ -1,5 +1,6 @@
 import api from './api.js';
-import { dispatchToolAction, executeAgentTool, resolveSemanticAction, extractImageUrl } from './tool-caller.js';
+import { executeAgentTool } from './agent-tools.js';
+import { extractImageUrl } from './tool-caller.js';
 import { chatWithAI, cleanForVoice, isErrorText } from './ai.js';
 import { TRIGGERS, TRIGGERS_REGEX } from './persona.js';
 import {
@@ -229,19 +230,8 @@ export async function maybeAutoReply(sock, m) {
 
   const awayExtra = isReturnee ? welcomeBackExtra(profile, away) : '';
 
-  // 🛠️ فحص وتنفيذ الأدوات الذكية التفاعلية فوراً بدون أي تأخير (تعديل صور، فيديو، رسم، صوت، تفريغ...)
-  const handled = await dispatchToolAction(sock, m, text, profile);
-  if (handled) {
-    bump('commands');
-    bump('aiReplies');
-    awardXp(key, 5);
-    rememberMessage(key, 'bot', `[أداة منفذة: ${text.slice(0, 40)}]`);
-    chillTick(key);
-    return;
-  }
-
-  // 🗣️ لو في جروب ومفيش منشن أو نداء للبوت ولا أداة مطلوبة → متتدخلش في دردشة الناس
-  if (!isAddressedToBot(sock, m)) return;
+  // 🗣️ لو في جروب ومفيش منشن أو نداء للبوت ولا رسالة موجهة → متتدخلش في دردشة الناس
+  if (m.isGroup && !isAddressedToBot(sock, m)) return;
 
   // 👁️ رؤية وفهم الصور للمحادثة العامة: صورة مرفقة أو مقتبسة في الخاص أو الجروبات (Groq Vision المباشر)
   let directImage = null;
@@ -284,7 +274,7 @@ export async function maybeAutoReply(sock, m) {
     });
     reply = typeof res === 'string' ? res : (res?.reply ?? null);
     reasoning = res?.reasoning ?? null;
-    agentTools = res?.tools ?? [];
+    agentTools = (res?.toolCalls && res.toolCalls.length > 0) ? res.toolCalls : (res?.tools ?? []);
     bump('aiReplies');
     awardXp(key, 3);
   } catch (err) {
@@ -293,17 +283,6 @@ export async function maybeAutoReply(sock, m) {
       reply = await api.simsimi(text);
     } catch {
       reply = null;
-    }
-  }
-
-  // 🧠 ربط النموذج بالتنفيذ (Autonomous Decision Loop):
-  // بعد ما النموذج فكر ورد، لو لم يكتب وسماً صريحاً ولكن كان الطلب واضحاً،
-  // نقوم باستنتاج الإجراء دلالياً وربطه بالتنفيذ فوراً لمنع أي خطأ
-  if (!agentTools || agentTools.length === 0) {
-    const semanticAction = resolveSemanticAction(text, m, reply);
-    if (semanticAction) {
-      agentTools = [semanticAction];
-      console.log(`🎯 [Semantic Resolver] تم استنتاج وربط قرار الأداة من فهم الطلب: ${semanticAction.name}`);
     }
   }
 
