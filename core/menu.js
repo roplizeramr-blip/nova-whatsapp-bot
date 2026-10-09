@@ -1,6 +1,7 @@
 import { MB } from '@rexxhayanasi/elaina-baileys';
 import { config } from '../config.js';
 import { ARABIC_ALIASES } from './arabic.js';
+import { getCommandsRegistry } from './loader.js';
 
 // 🗂️ أقسام أوامر بـوت استرو — مصنفة بدقة كاملة بالعربي
 export const SECTIONS = [
@@ -147,11 +148,13 @@ export async function mainMenu(sock, jid, extra = '', ctx = null) {
   const now = new Date();
   const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: true });
 
+  const reg = getCommandsRegistry();
+  const categoriesMap = ctx?.categories || reg.categories;
   let totalUniqueCmds = 0;
-  if (ctx?.categories) {
-    for (const cmds of ctx.categories.values()) totalUniqueCmds += cmds.length;
+  if (categoriesMap) {
+    for (const cmds of categoriesMap.values()) totalUniqueCmds += cmds.length;
   }
-  const cmdsCount = totalUniqueCmds || 103;
+  const cmdsCount = totalUniqueCmds || 105;
 
   const textLines = [
     '╭───────────────────────────────╮',
@@ -225,9 +228,11 @@ export async function sectionMenu(sock, jid, sectionKey, ctx) {
     (s) => s.id === normKey || s.aliases.some((a) => a.toLowerCase() === normKey),
   );
 
-  if (!section) return mainMenu(sock, jid);
+  if (!section) return mainMenu(sock, jid, '', ctx);
 
-  const cmds = ctx.categories.get(section.id) ?? [];
+  const reg = getCommandsRegistry();
+  const categoriesMap = ctx?.categories || reg.categories;
+  const cmds = categoriesMap?.get(section.id) ?? [];
   if (!cmds.length) {
     return send(sock, jid, {
       title: `${section.emoji} ${section.label}`,
@@ -270,6 +275,9 @@ export async function sectionMenu(sock, jid, sectionKey, ctx) {
 
 // ═══ عرض جميع الأوامر دفعة واحدة ═══
 export async function allCommandsMenu(sock, jid, ctx) {
+  const reg = getCommandsRegistry();
+  const categoriesMap = ctx?.categories || reg.categories;
+
   const lines = [
     '╭───────────────────────────────╮',
     '│     📖 *دليل أوامر استرو الشامل*     │',
@@ -278,7 +286,7 @@ export async function allCommandsMenu(sock, jid, ctx) {
   ];
 
   for (const sec of SECTIONS) {
-    const cmds = ctx.categories.get(sec.id) ?? [];
+    const cmds = categoriesMap?.get(sec.id) ?? [];
     if (!cmds.length) continue;
 
     lines.push(`\n┌──『 ${sec.emoji} ${sec.label} (${cmds.length}) 』`);

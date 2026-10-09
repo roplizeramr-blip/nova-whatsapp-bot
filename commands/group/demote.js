@@ -4,7 +4,7 @@ import { targetOf, mentionOf } from '../../core/groupadmin.js';
 // ⬇️ .demote — تنزيل أدمن لعضو
 export default {
   name: 'demote',
-  aliases: ['تنزيل', 'تنزيلادمن'],
+  aliases: ['تنزيل_مشرف', 'تنزيلادمن', 'سحب_الادمن', 'انزل_ادمن'],
   description: 'تنزيل أدمن لعضو عادي — منشنه أو رد على رسالته',
   usage: '.demote @شخص',
   async execute(sock, m) {

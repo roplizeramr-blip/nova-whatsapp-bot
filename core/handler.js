@@ -154,7 +154,7 @@ export async function handleUpsert(sock, ctx, { messages, type }) {
           console.error('⚠️ خطأ في معالج الألعاب التلقائي:', gameErr);
         }
         if (!gameHandled) {
-          await maybeAutoReply(sock, m);
+          await maybeAutoReply(sock, m, ctx);
         }
       }
     } catch (err) {

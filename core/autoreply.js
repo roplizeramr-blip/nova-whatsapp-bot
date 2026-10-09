@@ -115,7 +115,7 @@ function welcomeBackExtra(profile, awayHours) {
   ].filter(Boolean).join(' ');
 }
 
-export async function maybeAutoReply(sock, m) {
+export async function maybeAutoReply(sock, m, ctx = {}) {
   if (config.aiChat === false) return;
   if (m.isGroup && getSettings(m.jid).ai === false) return;
 
@@ -315,13 +315,15 @@ export async function maybeAutoReply(sock, m) {
   // 🛠️ تنفيذ أداة الإيجنت الذكية المتصلة بالنموذج
   if (agentTools.length > 0) {
     try {
-      const executed = await executeAgentTool(sock, m, agentTools[0], profile);
+      const executed = await executeAgentTool(sock, m, agentTools[0], profile, ctx);
       if (executed) {
         bump('commands');
         awardXp(key, 5);
-        if (reply && reply.length > 5 && !reply.startsWith('[') && !reply.startsWith('{') && !reply.includes('إيجنت نفذ')) {
+        // لا نرسل رسالة نصية ثانية إلا إذا كانت ذات فائدة وليست وسوماً داخلية
+        if (reply && reply.length > 5 && !reply.startsWith('[') && !reply.startsWith('{') && !/إيجنت\s*نفذ|TOOL|ACTION/i.test(reply)) {
           rememberMessage(key, 'bot', reply);
-          if (agentTools[0].name !== 'send_message') {
+          // إذا لم تكن الأداة قد أرسلت رسائل تفاعلية كاملة
+          if (!['send_message', 'play_game', 'make_sticker', 'tools_utility', 'economy_action', 'group_management', 'moderation_protection', 'entertainment_fun', 'music_content', 'bot_system', 'execute_command'].includes(agentTools[0].name)) {
             await sendText(sock, m.jid, reply).catch(() => {});
           }
         }

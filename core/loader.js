@@ -6,6 +6,13 @@ import { ARABIC_ALIASES, normalizeArabic } from './arabic.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = join(__dirname, '..', 'commands');
 
+let globalCommands = new Map();
+let globalCategories = new Map();
+
+export function getCommandsRegistry() {
+  return { commands: globalCommands, categories: globalCategories };
+}
+
 /**
  * بيحمّل كل الأوامر من commands/<قسم>/<أمر>.js — كل ملف بيعمل export default
  * فيه name + execute() على الأقل. الملفات اللي بتبدأ بـ _ (هيلبرز/قوالب) بتتخطى.
@@ -49,6 +56,9 @@ export async function loadCommands() {
       }
     }
   }
+
+  globalCommands = commands;
+  globalCategories = categories;
 
   return { commands, categories, errors, collisions, shadowedCount };
 }
