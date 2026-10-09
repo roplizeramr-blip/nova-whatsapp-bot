@@ -180,9 +180,7 @@ export async function sendImage(sock, jid, imageUrl, caption, extra = {}) {
       } catch (e2) {
         console.warn('⚠️ فشل إرسال رابط الصورة لـ Baileys:', e2.message?.slice(0, 70));
       }
-    }
-
-    return fallbackText(sock, jid, `🖼️ ${caption ? caption + '\n\n' : ''}🔗 رابط الصورة: ${imageUrl}`);
+    return fallbackText(sock, jid, '🎨 معلش يا غالي، تعذر إرسال الصورة حالياً بسبب ضغط في السيرفر. جرب تطلبها تاني بعد لحظات.');
   }
 }
 
@@ -258,30 +256,6 @@ export async function sendQuickReplies(sock, jid, {
     return withRetry('إرسال نص', () => sock.sendMessage(jid, { text: String(text ?? ''), ...extra }, quoted ? { quoted } : {}));
   }
 
-  // 👥 في الجروبات: تحويل فوري لنص منظم وموثوق 100% لتفادي إسقاط واتساب للأزرار التفاعلية (Native Flow)
-  if (jid && String(jid).endsWith('@g.us')) {
-    let groupText = title ? `╭───「 ${title} 」───╮\n\n` : '';
-    groupText += String(text ?? '');
-    if (list.length) {
-      groupText += '\n\n📂 *الخيارات المتاحة:*';
-      for (const btn of list) {
-        groupText += `\n▸ ${btn.label}: \`${btn.id}\``;
-      }
-    }
-    if (sections?.length) {
-      for (const s of sections) {
-        groupText += `\n\n◆ *${s.title ?? ''}*`;
-        for (const r of s.rows ?? []) {
-          groupText += `\n  • ${r.header ? r.header + ' ' : ''}*${r.title}*: \`${r.id}\``;
-        }
-      }
-    }
-    groupText += '\n\n╰─────────────────────────╯';
-    return withRetry('إرسال نص الجروب المنظم', () =>
-      sock.sendMessage(jid, { text: groupText, ...extra }, quoted ? { quoted } : {})
-    );
-  }
-
   try {
     const b = new MB.Button(sock);
     if (title) b.setTitle(title);
@@ -306,7 +280,7 @@ export async function sendQuickReplies(sock, jid, {
       }
     }
 
-    return await withRetry('إرسال الأزرار', () => b.send(jid));
+    return await withRetry('إرسال الأزرار', () => b.send(jid, quoted ? { quoted } : {}));
   } catch (err) {
     console.error('⚠️ الأزرار فشلت، هرجّع نص:', err.message?.slice(0, 80));
     let fallback = title ? `╭─「 ${title} 」\n\n` : '';

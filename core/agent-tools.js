@@ -335,14 +335,27 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
     if (prompt) {
       await sendText(sock, m.jid, '🎨 حاضر من عيني يا فنان! ثواني وأرسمهالك بالذكاء الاصطناعي... ⏳');
       try {
-        const url = await api.image(prompt);
-        if (url) {
-          // 💾 حفظ ومزامنة الصورة في ذاكرة الشات السياقية
-          const chatImages = db.get('chatImages', {});
-          chatImages[m.jid] = { url, prompt, at: Date.now() };
-          db.set('chatImages', chatImages);
+        const imgResult = await api.image(prompt);
+        if (imgResult) {
+          // 💾 حفظ ومزامنة الصورة في ذاكرة الشات السياقية لو رابط
+          if (typeof imgResult === 'string') {
+            const chatImages = db.get('chatImages', {});
+            chatImages[m.jid] = { url: imgResult, prompt, at: Date.now() };
+            db.set('chatImages', chatImages);
+          }
 
-          await sendImage(sock, m.jid, url, `🎨 تم رسم: *${prompt}*\n⚡ بواسطة *استرو بـوت*`);
+          await sendImage(sock, m.jid, imgResult, `🎨 تم رسم: *${prompt}*\n⚡ بواسطة *استرو بـوت*`);
+
+          // أزرار متابعة تفاعلية فورية
+          const shortP = prompt.length > 50 ? prompt.slice(0, 50) : prompt;
+          await sendQuickReplies(sock, m.jid, {
+            title: '🎨 خيارات الصورة',
+            text: 'تحب تعمل إيه في الصورة دي؟',
+            buttons: [
+              { label: '🎬 تحويل إلى فيديو', id: `.video ${shortP}` },
+              { label: '🎨 رسم نسخة ثانية', id: `.image ${shortP}` },
+            ],
+          });
           return true;
         }
       } catch (err) {
@@ -369,17 +382,17 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
       } catch (err) {
         console.error('⚠️ فشل توليد الفيديو:', err.message);
       }
-      // 🛡️ بديل سينمائي فوري عالي الدقة في حال بطء أو توقف سيرفر الفيديو
-      try {
-        const scenePrompt = `cinematic dramatic movie shot, masterpiece, highly detailed: ${prompt}`;
-        const sceneUrl = await api.image(scenePrompt, { ratio });
-        if (sceneUrl) {
-          const notice = `🎬 يا غالي، سيرفر تحريك الفيديو بالذكاء الاصطناعي عليه صيانة وضغط حالياً. صممتلك المشهد السينمائي فائق الجودة ده فوراً بالذكاء الاصطناعي عشان متستناش! 🎨✨\n\n💡 تقدر كمان تحول أي صورة لملصق متحرك عبر أمر *.sticker* أو تعيد طلب الفيديو بعد قليل.`;
-          await sendImage(sock, m.jid, sceneUrl, `🎬 *مشهد سينمائي بديل:*\n${prompt}\n\n${notice}`);
-          return true;
-        }
-      } catch {}
-      await sendText(sock, m.jid, '😵 معلش يا صاحبي، سيرفر معالجة الفيديو عليه ضغط مؤقت دلوقتي، جرب توليد صورة أو جرب كمان شوية.');
+
+      // إبلاغ المستخدم بوضوح مع أزرار تفاعلية للبدائل الحقيقية
+      const shortP = prompt.length > 50 ? prompt.slice(0, 50) : prompt;
+      await sendQuickReplies(sock, m.jid, {
+        title: '🎬 تعذر إنشاء الفيديو',
+        text: '⚠️ يا غالي، سيرفر تحريك الفيديو بالذكاء الاصطناعي عليه صيانة وضغط حالياً في المصدر.\nتقدر ترسم المشهد كصورة HD أو تجرب الفيديو تاني بعد شوية:',
+        buttons: [
+          { label: '🎨 رسم المشهد كصورة HD', id: `.image ${shortP}` },
+          { label: '🎬 إعادة محاولة الفيديو', id: `.video ${shortP}` },
+        ],
+      });
       return true;
     }
   }

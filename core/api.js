@@ -268,51 +268,67 @@ export const api = {
     return d.response?.reply ?? '';
   },
 
-  // صورة بالذكاء الاصطناعي — Pollinations Flux أساسي وسريع جداً (3-4 ثوان)، VEX وEngez احتياطي
-  async image(prompt, { model = 'flux', ratio = '1:1' } = {}) {
+  // صورة بالذكاء الاصطناعي — Pollinations سريع وفائق الجودة (بدون model=flux لتفادي 402)، مع تنزيل Buffer مباشر واحتياطي Engez وVEX
+  async image(prompt, { ratio = '1:1' } = {}) {
     let lastErr;
     const cleanPrompt = String(prompt || '').trim();
     if (!cleanPrompt) throw new Error('مطلوب وصف للصورة');
 
-    // 1. الأساسي: Pollinations AI (Flux فائق الجودة والسرعة، مجاني وبدون تايم آوت)
+    let width = 1024;
+    let height = 1024;
+    if (ratio === '9:16') {
+      width = 768;
+      height = 1344;
+    } else if (ratio === '16:9') {
+      width = 1344;
+      height = 768;
+    }
+    const seed = Math.floor(Math.random() * 10000000);
+
+    // 1. الأساسي: Pollinations AI (بدون model=flux لتجنب خطأ 402 الدفع) مع تحميل مباشر للـ Buffer
     try {
-      let width = 1024;
-      let height = 1024;
-      if (ratio === '9:16') {
-        width = 768;
-        height = 1344;
-      } else if (ratio === '16:9') {
-        width = 1344;
-        height = 768;
+      const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=${width}&height=${height}&nologo=true&seed=${seed}`;
+      const res = await axios.get(pollUrl, {
+        responseType: 'arraybuffer',
+        timeout: 25000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          Accept: 'image/*',
+        },
+      });
+      if (res.status === 200 && res.data && res.data.length >= 1000) {
+        return Buffer.from(res.data);
       }
-      const seed = Math.floor(Math.random() * 10000000);
-      const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=${width}&height=${height}&model=flux&nologo=true&seed=${seed}`;
-      return pollUrl;
     } catch (err) {
+      console.warn('⚠️ تعذر جلب صورة Pollinations مباشرة، جاري تجربة الاحتياطي:', err.message?.slice(0, 60));
       lastErr = err;
     }
 
-    // 2. الاحتياطي: VEX AI (Flux)
-    try {
-      const vexUrl = await this.vexAiImage(cleanPrompt, { model: 'flux', ratio });
-      if (vexUrl) return vexUrl;
-    } catch (err) {
-      lastErr = err;
-    }
-
-    // 3. الاحتياطي الثاني: Engez Flux
+    // 2. الاحتياطي الأول: Engez Flux
     try {
       const d = await get(
         '/api/v1/ai/imageai',
         { action: 'توليد', prompt: cleanPrompt, model: '1' },
-        20000,
+        25000,
       );
       if (d.response?.url) return d.response.url;
     } catch (err) {
+      console.warn('⚠️ فشل الاحتياطي Engez imageai:', err.message?.slice(0, 60));
       lastErr = err;
     }
 
-    throw lastErr ?? new Error('فشل توليد الصورة');
+    // 3. الاحتياطي الثاني: VEX AI (Flux)
+    try {
+      const vexUrl = await this.vexAiImage(cleanPrompt, { model: 'flux', ratio });
+      if (vexUrl) return vexUrl;
+    } catch (err) {
+      console.warn('⚠️ فشل الاحتياطي VEX AI:', err.message?.slice(0, 60));
+      lastErr = err;
+    }
+
+    // 4. الاحتياطي الأخير: رابط Pollinations كخيار أخير
+    const fallbackPollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=${width}&height=${height}&nologo=true&seed=${seed}`;
+    return fallbackPollUrl;
   },
 
   async chatgpt(prompt) {

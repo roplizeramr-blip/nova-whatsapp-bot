@@ -396,20 +396,11 @@ export async function maybeAutoReply(sock, m) {
     buttons.push({ label: '🎧 استمع بصوت', id: '.ai voice' });
   }
 
-  // 💡 إرسال الرد: في الجروبات نبعت نص مباشر مع اقتباس رسالة المستخدم { quoted: m.msg }
-  // لتفادي إسقاط واتساب للأزرار التفاعلية (Native Flow) في الجروبات وضمان وصول الإشعار
-  if (m.isGroup) {
-    let groupReply = reply;
-    if (reasoning && reasoning.trim().length > 10) {
-      groupReply += '\n\n💡 _اكتب `.ai thought` لمعرفة خطوات التفكير_';
-    }
-    await sendText(sock, m.jid, groupReply, { quoted: m.msg });
+  // 💡 إرسال الرد مع الأزرار التفاعلية واقتباس رسالة المستخدم
+  if (buttons.length > 0) {
+    await sendQuickReplies(sock, m.jid, { text: reply, buttons, quoted: m.msg });
   } else {
-    if (buttons.length > 0) {
-      await sendQuickReplies(sock, m.jid, { text: reply, buttons });
-    } else {
-      await sendText(sock, m.jid, reply);
-    }
+    await sendText(sock, m.jid, reply, { quoted: m.msg });
   }
 
   // 😐 لو مود هادي → عديّ رسالة من فترة التبريد

@@ -59,19 +59,17 @@ export default {
         });
       }
     } catch (err) {
-      console.warn('⚠️ تعذر خادم الفيديو، جاري التوليد السينمائي الاحتياطي:', err.message);
+      console.warn('⚠️ تعذر خادم الفيديو:', err.message);
     }
 
-    // 🛡️ بديل سينمائي فوري عالي الدقة في حال بطء أو توقف خادم الفيديو
-    try {
-      const scenePrompt = `cinematic dramatic movie shot, masterpiece, highly detailed: ${cleanPrompt}`;
-      const sceneUrl = await api.image(scenePrompt, { ratio });
-      if (sceneUrl) {
-        const notice = `🎬 يا غالي، سيرفر ريندر الفيديو عليه ضغط وتقيل شوية دلوقتي، بس صممتلك المشهد السينمائي فائق الجودة ده فوراً عشان تشوف النتيجة بجودة HD! 🎨✨\n\n💡 تقدر كمان تحول أي صورة لملصق متحرك عبر أمر *.sticker* أو تعيد طلب الفيديو بعد شوية.`;
-        return await sendImage(sock, m.jid, sceneUrl, `🎬 *مشهد سينمائي بديل:*\n${cleanPrompt}\n\n${notice}`);
-      }
-    } catch {}
-
-    return m.reply('❌ تعذر إنشاء الفيديو حالياً، سيرفر المعالجة عليه ضغط. جرب مرة أخرى لاحقاً.');
+    const followUpPrompt = cleanPrompt.length > 80 ? cleanPrompt.slice(0, 80) : cleanPrompt;
+    return await sendQuickReplies(sock, m.jid, {
+      title: '🎬 تعذر إنشاء الفيديو',
+      text: '⚠️ يا غالي، سيرفر إنشاء الفيديو بالذكاء الاصطناعي عليه صيانة وضغط حالياً في المصدر.\nتقدر ترسم المشهد كصورة HD فوراً أو تجرب الفيديو تاني بعد شوية:',
+      buttons: [
+        { label: '🎨 رسم المشهد كصورة HD', id: `.image ${followUpPrompt}` },
+        { label: '🎬 إعادة محاولة الفيديو', id: `.video ${followUpPrompt}` },
+      ],
+    });
   },
 };
