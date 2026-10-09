@@ -1,7 +1,8 @@
-import { GeminiLiveSession } from './gemini-live.js';
+import { GeminiLiveSession, buildAstroCallPrompt } from './gemini-live.js';
 import resampler from './audio-resampler.js';
-import { config } from '../config.js';
+import { config, CONTACTS } from '../config.js';
 import { sendVoice, sendText } from './send.js';
+import { startZapoVoipEngine } from './zapo-engine.js';
 
 let zapoClient = null;
 let zapoActive = false;
@@ -9,10 +10,24 @@ const activeLiveSessions = new Map();
 
 /**
  * Initializes Call Engine on the active WhatsApp socket (Baileys)
- * Listens for incoming WhatsApp call offers
+ * Listens for incoming WhatsApp call offers and initializes Zapo VoIP
  */
 export function initCallEngine(sock) {
   if (!sock || !sock.ev) return;
+
+  // محاولة تشغيل محرك Zapo VoIP للرد المباشر داخل شاشة واتساب
+  setTimeout(() => {
+    startZapoVoipEngine()
+      .then((client) => {
+        if (client) {
+          attachZapoClient(client);
+          console.log('⚡ [VOIP] محرك المكالمات الحية داخل واتساب (Zapo Native) جاهز ويعمل');
+        }
+      })
+      .catch((err) => {
+        console.warn('ℹ️ [VOIP] محرك Zapo في انتظار جاهزية الجلسة:', err.message);
+      });
+  }, 3000);
 
   sock.ev.on('call', async (calls) => {
     for (const call of calls) {
@@ -24,34 +39,31 @@ export function initCallEngine(sock) {
         try {
           // 1. لو محرك Zapo VoIP شغال ومسجل، Zapo هو اللي هيقبل المكالمة ويبث الصوت
           if (zapoActive && zapoClient) {
-            console.log(`[VOIP] محرك Zapo نشط — جاري محاولة التقاط المكالمة عبر Zapo...`);
-            // Zapo handles it via its own voip_call_incoming event
+            console.log(`[VOIP] محرك Zapo نشط — جاري التقاط المكالمة داخل واتساب...`);
             continue;
           }
 
-          // 2. إذا كانت المكالمة على سوكيت Baileys مباشرة:
-          // بما أن بروتوكول Baileys الأصلي لا يحتوي على مسار الوسائط المشفر لـ WebRTC،
-          // نقوم بإشعار المتصل فوراً والرد عليه صوتياً ونرسل له رابط غرفة المكالمة الحية
+          // 2. إذا لم تكن جلسة Zapo مكتملة بعد:
+          // الرد الصوتي الفوري على المستخدم بشخصية استرو الأصلية
           const callUrl = `https://nova-bot-x3unfm.cranl.net/call`;
-          const callerNumber = callerJid.split('@')[0].split(':')[0];
 
-          // رسالة ترحيبية فورية بالاتصال
           const greetingText = 
             `╭───『 📞 مـكـالـمـة صـوتـيـة حـيـة ⚡ 』───╮\n` +
             `│\n` +
             `│ أهلاً بك يا غالي! استلمت رنتك حالا ⚡\n` +
             `│\n` +
-            `│ 🎙️ *عايز تتكلم صوت مباشر مع أسترو عبر المايك؟*\n` +
+            `│ 🎙️ *عايز تتكلم صوت مباشر مع أسترو بالمايك؟*\n` +
             `│ اضغط على الرابط ده وافتح المايك وابدأ الكلام فوراً:\n` +
             `│ 🔗 ${callUrl}\n` +
             `│\n` +
             `│ ⚡ شغال بنموذج: *Gemini 3.8 Live Extended Thinking*\n` +
-            `│ أو ابعتلي أي رسالة صوتية (فويس) هنا وهرد عليك فويس في ثانية! 🎧\n` +
+            `│ 🗣️ نفس شخصية استرو المصرية الجدعة وخفيفة الظل!\n` +
+            `│ أو ابعتلي أي رسالة صوتية (فويس) وهرد عليك فويس في ثانية! 🎧\n` +
             `╰─────────────────────────╯`;
 
           await sock.sendMessage(callerJid, { text: greetingText }).catch(() => {});
 
-          // توليد رد صوتي فوري عبر Gemini Live وبثه كـ Voice Note (PTT)
+          // توليد رد صوتي فوري عبر Gemini Live وبثه كـ Voice Note (PTT) بشخصية استرو
           generateInstantLiveGreeting(sock, callerJid);
 
         } catch (err) {
@@ -65,12 +77,12 @@ export function initCallEngine(sock) {
 }
 
 /**
- * Generates an instant spoken voice response from Gemini 3.8 Live and sends it as PTT
+ * Generates an instant spoken voice response from Gemini 3.8 Live with Astro Persona and sends it as PTT
  */
 async function generateInstantLiveGreeting(sock, toJid) {
   try {
     const liveSession = new GeminiLiveSession({
-      systemInstruction: 'أنت أسترو، رن عليك مستخدم على واتساب. رد عليه الآن بلهجة مصرية عامية مرحة وسريعة في ثانيتين: قله "ألو يا فنان! أنا استلمت رنتك.. اضغط على الرابط اللي بعتهولك فوق ونتكلم مباشر بالمايك أو ابعتلي فويس شات وأنا معاك يا غالي!".'
+      callerJid: toJid
     });
 
     const audioChunks = [];
@@ -81,8 +93,6 @@ async function generateInstantLiveGreeting(sock, toJid) {
       if (audioChunks.length === 0) return;
 
       const full24k = Buffer.concat(audioChunks);
-      // Send as voice note to the user
-      // Convert raw PCM to sendable audio buffer using wav encoder
       const wavHeader = createWavHeader(full24k.length, 24000, 1, 16);
       const wavBuffer = Buffer.concat([wavHeader, full24k]);
 
@@ -100,7 +110,7 @@ async function generateInstantLiveGreeting(sock, toJid) {
     });
 
     await liveSession.connect();
-    liveSession.sendText('ابدأ بالرد على المتصل الآن فوراً');
+    liveSession.sendText('أنت استرو، المتصل رن عليك حالا في واتساب. افتح الكلام فوراً بترحيب مصري عامي سريع كأنك رديت في التليفون: ألو يا فنان! ألو يا غالي! أنا استرو.. استلمت رنتك يا باشا! افتح الرابط اللي بعتهولك فوق ونتكلم مباشر بالمايك أو ابعتلي فويس شات وأنا معاك يا كبير!');
   } catch (err) {
     console.warn('⚠️ تعذر إرسال الفويس الفوري للمتصل:', err.message);
   }
@@ -116,7 +126,7 @@ function createWavHeader(dataLength, sampleRate = 24000, channels = 1, bitDepth 
   header.write('WAVE', 8);
   header.write('fmt ', 12);
   header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20); // PCM format
+  header.writeUInt16LE(1, 20);
   header.writeUInt16LE(channels, 22);
   header.writeUInt32LE(sampleRate, 24);
   header.writeUInt32LE(sampleRate * channels * (bitDepth / 8), 28);
@@ -134,21 +144,23 @@ export function attachZapoClient(client) {
   zapoClient = client;
   zapoActive = true;
 
-  // Incoming call event on Zapo
+  // Incoming call event on Zapo (Native in WhatsApp)
   client.on('voip_call_incoming', async (call) => {
-    console.log(`\n📞 [ZAPO-VOIP] مكالمة واردة من: ${call.peerJid} (ID: ${call.callId})`);
+    console.log(`\n📞 [ZAPO-VOIP] مكالمة واردة من داخل واتساب! من: ${call.peerJid} (ID: ${call.callId})`);
     if (call.canAccept) {
       try {
-        console.log(`[ZAPO-VOIP] جاري الرد وقبول المكالمة: ${call.callId}...`);
+        console.log(`⚡ [ZAPO-VOIP] جاري الرد وقبول المكالمة داخل واتساب: ${call.callId}...`);
         await client.voip.acceptCall(call.callId);
 
-        // إنشاء جلسة بث حي مع Gemini 3.8 Live
-        const liveSession = new GeminiLiveSession();
+        // إنشاء جلسة بث حي مع Gemini 3.8 Live بشخصية استرو الأصلية
+        const callerPn = call.callerPn ? `${call.callerPn}@s.whatsapp.net` : call.peerJid;
+        const liveSession = new GeminiLiveSession({ callerJid: callerPn });
         activeLiveSessions.set(call.callId, liveSession);
 
         liveSession.on('ready', () => {
-          console.log(`[ZAPO-VOIP] جاهزية جلسة Gemini Live للمكالمة ${call.callId}`);
+          console.log(`🎙️ [ZAPO-VOIP] جاهزية جلسة Gemini Live للمكالمة ${call.callId}`);
           client.voip.setExternalAudioMode(call.callId, true);
+          liveSession.sendText('المكالمة فتحت الآن.. رحب بالمتصل باللهجة المصرية كأنك فتحت الخط وبترد في التليفون: ألو يا فنان! ألو يا غالي! أسترو معاك، سامعك يا باشا قولّي إيه الأخبار؟');
         });
 
         // صوت Gemini يذهب للمتصل في واتساب
