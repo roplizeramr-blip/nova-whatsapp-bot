@@ -180,6 +180,8 @@ export async function sendImage(sock, jid, imageUrl, caption, extra = {}) {
       } catch (e2) {
         console.warn('⚠️ فشل إرسال رابط الصورة لـ Baileys:', e2.message?.slice(0, 70));
       }
+    }
+
     return fallbackText(sock, jid, '🎨 معلش يا غالي، تعذر إرسال الصورة حالياً بسبب ضغط في السيرفر. جرب تطلبها تاني بعد لحظات.');
   }
 }
