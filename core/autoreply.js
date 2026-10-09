@@ -249,16 +249,22 @@ export async function maybeAutoReply(sock, m) {
 
   // 🗣️ لو في جروب ومفيش منشن أو نداء للبوت ولا رسالة موجهة → متتدخلش في دردشة الناس
   if (m.isGroup && !isAddressedToBot(sock, m)) return;
+  console.log(`🤖 [AutoReply] معالجة الرسالة: "${text.slice(0, 40)}" في [${m.isGroup ? 'جروب' : 'خاص'}]`);
 
   // 👁️ رؤية وفهم الصور للمحادثة العامة: صورة مرفقة أو مقتبسة في الخاص أو الجروبات (Groq Vision المباشر)
   let directImage = null;
   try {
     directImage = await extractImageUrl(m);
+    if (directImage) {
+      const chatImages = db.get('chatImages', {});
+      chatImages[m.jid] = { url: directImage, at: Date.now() };
+      db.set('chatImages', chatImages);
+    }
   } catch {}
   const extra = awayExtra;
 
-  // ⚡ كاش الردود المتشابهة — نفس السؤال في 10 دقايق = رد فوري (بدون صور)
-  if (!directImage && !hasImage && !wantsVoice && !isReturnee) {
+  // ⚡ كاش الردود المتشابهة — في الخاص فقط (مش في الجروبات لتفادي الأخطاء وتحديث التفاعل)
+  if (!m.isGroup && !directImage && !hasImage && !wantsVoice && !isReturnee) {
     const caches = db.get('replyCache', {});
     const hit = caches[m.jid]?.[normQ(text)];
     if (hit && Date.now() - hit.at < 600000) {

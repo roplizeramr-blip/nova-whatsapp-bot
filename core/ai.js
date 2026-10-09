@@ -323,6 +323,22 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     };
   }
 
+  // 🎯 استجابة فورية وحيوية لنداء البوت الصريح ("استرو", "يا استرو", "نوفا")
+  if (/^(?:يا\s*)?(?:استرو+|أسترو+|إسترو+|نوفا+|astro+|nova+)[!؟?.]*$/i.test(text)) {
+    const greetings = isDev
+      ? ['أيوة يا أدهم يا معلم! تاج راسي، أؤمرني وسامعك بكل وضوح 👑❤️', 'معاك يا هندسة! اتفضل يا أدهم يا غالي، كل طلباتك مجابة فوراً ✨']
+      : [
+          `أيوة يا ${pushName || 'صاحبي'} معاك! أؤمرني يا غالي وسامعك بكل وضوح 😄✨`,
+          `معاك يا باشا! اتفضل يا ${pushName || 'فنان'}، عيوني ليك دايماً ❤️`,
+          `يا هلا بيك! سامعك يا غالي، اتفضل أؤمرني وعيوني ليك 😄`,
+        ];
+    const picked = greetings[Math.floor(Math.random() * greetings.length)];
+    return {
+      reply: picked,
+      engine: 'direct-greeting',
+    };
+  }
+
   // 🎯 فحص فوري ومحكم لمنع الهلوسة في كشف الأسماء والهوية (Zero-Hallucination Identity Resolution)
   if (/(?:مين\s*(?:انا|أنا)|اسمي\s*(?:ايه|إيه|شو|شنو)|عارف\s*اسمي|تعرف\s*(?:انا\s*|أنا\s*)?مين|عارفني|تعرفني)/i.test(text)) {
     if (contact?.role === 'حبيبة' || contact?.name?.includes('شروق')) {

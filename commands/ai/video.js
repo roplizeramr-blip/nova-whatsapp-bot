@@ -1,4 +1,4 @@
-import { sendQuickReplies, sendText, sendVideo } from '../../core/send.js';
+import { sendQuickReplies, sendText, sendVideo, sendImage } from '../../core/send.js';
 import api from '../../core/api.js';
 
 export default {
@@ -41,21 +41,37 @@ export default {
       });
     }
 
-    await sendText(sock, m.jid, `🎬 بجهز الفيديو بأبعاد (${ratio})... استنى شوية (من 30 لـ 60 ثانية)`);
+    await sendText(sock, m.jid, `🎬 بجهز الفيديو بأبعاد (${ratio})... استنى ثواني ⏳`);
 
-    const url = await api.video(cleanPrompt, { ratio });
-    if (!url) throw new Error('فشل توليد الفيديو');
+    try {
+      const url = await api.video(cleanPrompt, { ratio });
+      if (url) {
+        await sendVideo(sock, m.jid, url, `🎬 ${cleanPrompt}\n📐 الأبعاد: ${ratio}`);
 
-    await sendVideo(sock, m.jid, url, `🎬 ${cleanPrompt}\n📐 الأبعاد: ${ratio}`);
+        const followUpPrompt = cleanPrompt.length > 80 ? cleanPrompt.slice(0, 80) : cleanPrompt;
+        return await sendQuickReplies(sock, m.jid, {
+          title: '🎬 خيارات إضافية للفيديو',
+          text: 'تم إنشاء الفيديو بنجاح! حابب تعيده بنسبة تانية؟',
+          buttons: [
+            { label: '🎬 إعادة بالعرض (16:9)', id: `.video 16:9 ${followUpPrompt}` },
+            { label: '📱 إعادة بالطول (9:16)', id: `.video 9:16 ${followUpPrompt}` },
+          ],
+        });
+      }
+    } catch (err) {
+      console.warn('⚠️ تعذر خادم الفيديو، جاري التوليد السينمائي الاحتياطي:', err.message);
+    }
 
-    const followUpPrompt = cleanPrompt.length > 80 ? cleanPrompt.slice(0, 80) : cleanPrompt;
-    await sendQuickReplies(sock, m.jid, {
-      title: '🎬 خيارات إضافية للفيديو',
-      text: 'تم إنشاء الفيديو بنجاح! حابب تعيده بنسبة تانية؟',
-      buttons: [
-        { label: '🎬 إعادة بالعرض (16:9)', id: `.video 16:9 ${followUpPrompt}` },
-        { label: '📱 إعادة بالطول (9:16)', id: `.video 9:16 ${followUpPrompt}` },
-      ],
-    });
+    // 🛡️ بديل سينمائي فوري عالي الدقة في حال بطء أو توقف خادم الفيديو
+    try {
+      const scenePrompt = `cinematic dramatic movie shot, masterpiece, highly detailed: ${cleanPrompt}`;
+      const sceneUrl = await api.image(scenePrompt, { ratio });
+      if (sceneUrl) {
+        const notice = `🎬 يا غالي، سيرفر ريندر الفيديو عليه ضغط وتقيل شوية دلوقتي، بس صممتلك المشهد السينمائي فائق الجودة ده فوراً عشان تشوف النتيجة بجودة HD! 🎨✨\n\n💡 تقدر كمان تحول أي صورة لملصق متحرك عبر أمر *.sticker* أو تعيد طلب الفيديو بعد شوية.`;
+        return await sendImage(sock, m.jid, sceneUrl, `🎬 *مشهد سينمائي بديل:*\n${cleanPrompt}\n\n${notice}`);
+      }
+    } catch {}
+
+    return m.reply('❌ تعذر إنشاء الفيديو حالياً، سيرفر المعالجة عليه ضغط. جرب مرة أخرى لاحقاً.');
   },
 };

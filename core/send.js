@@ -182,15 +182,7 @@ export async function sendImage(sock, jid, imageUrl, caption, extra = {}) {
       }
     }
 
-    // لو الصورة WebP واتساب مش بيقبلها — حوّلها JPEG
-    try {
-      const { buffer } = await fetchMedia(imageUrl, {});
-      const jpg = await toJpeg(buffer);
-      return await withRetry('إرسال الصورة المحوّلة', () =>
-        sock.sendMessage(jid, { image: jpg, mimetype: 'image/jpeg', caption, ...extra }));
-    } catch {
-      return fallbackText(sock, jid, `🖼️ ${caption ? caption + '\n\n' : ''}🔗 رابط الصورة: ${imageUrl}`);
-    }
+    return fallbackText(sock, jid, `🖼️ ${caption ? caption + '\n\n' : ''}🔗 رابط الصورة: ${imageUrl}`);
   }
 }
 

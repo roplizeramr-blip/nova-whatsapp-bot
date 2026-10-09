@@ -339,7 +339,7 @@ export const api = {
     const d = await get(
       '/api/v1/ai/video-gen',
       { action: 'txt2video', prompt, duration, fps, motion, ratio, aiSound },
-      120000,
+      35000,
     );
     return d.response?.url ?? null;
   },

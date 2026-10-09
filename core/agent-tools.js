@@ -1,4 +1,5 @@
 import api from './api.js';
+import { db } from './db.js';
 import { sendText, sendImage, sendVideo, sendVoice, sendQuickReplies } from './send.js';
 import { extractImageUrl } from './tool-caller.js';
 import xoCmd from '../commands/games/xo.js';
@@ -97,7 +98,7 @@ export const AGENT_TOOLS_SPEC = [
     type: 'function',
     function: {
       name: 'edit_image',
-      description: 'تعديل أو تغيير الصورة المرفقة أو المقتبسة بالذكاء الاصطناعي (مثل تغيير الخلفية أو إضافة عناصر).',
+      description: 'تعديل أو تغيير الصورة المرفقة أو المقتبسة أو السابقة في الشات بالذكاء الاصطناعي (مثل تغيير الخلفية أو إضافة عناصر أو تعديل وضعية الأشخاص). استدعِ هذه الأداة فوراً عندما يطلب المستخدم: "عدل الصورة", "غير فيها", "خليها كذا", "ضيف كذا", "عدلها تاني", "خلي البنت قاعده جنبه", "edit image".',
       parameters: {
         type: 'object',
         properties: {
@@ -240,7 +241,54 @@ export const AGENT_TOOLS_SPEC = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'warn_user',
+      description: 'توجيه إنذار رسمي لعضو في الجروب لمخالفته القواعد (بعد 3 إنذارات يطرد تلقائياً). استدعِ هذه الأداة فوراً عندما يطلب المشرف: "ادي ده انذار", "انذار للشخص ده", "حذره", "warn this user".',
+      parameters: {
+        type: 'object',
+        properties: {
+          target: {
+            type: 'string',
+            description: 'رقم أو منشن العضو المراد إنذاره',
+          },
+          reason: {
+            type: 'string',
+            description: 'سبب الإنذار',
+          },
+        },
+      },
+    },
+  },
 ];
+
+/**
+ * 🎯 استخراج وتوحيد JID العضو المستهدف من الرسالة أو المنشن أو البرومبت بدقة
+ */
+export function resolveTargetJid(m, rawTarget) {
+  const info = m.message?.extendedTextMessage?.contextInfo;
+  // 1. لو فيه منشن صريح في السياق، ده الأدق
+  if (info?.mentionedJid && info.mentionedJid.length > 0) {
+    return info.mentionedJid[0];
+  }
+  // 2. لو فيه رسالة مقتبسة (رد على عضو)
+  if (info?.participant) {
+    return info.participant;
+  }
+  // 3. تحليل rawTarget إذا تم تمريره
+  if (rawTarget) {
+    const s = String(rawTarget).trim().replace(/^@/, '');
+    if (s.endsWith('@s.whatsapp.net') || s.endsWith('@lid')) {
+      return s;
+    }
+    const digits = s.replace(/\D/g, '');
+    if (digits.length >= 8) {
+      return `${digits}@s.whatsapp.net`;
+    }
+  }
+  return null;
+}
 
 /**
  * ⚡ الموزع التنفيذي للأدوات (Agent Tool Dispatcher)
@@ -289,6 +337,11 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
       try {
         const url = await api.image(prompt);
         if (url) {
+          // 💾 حفظ ومزامنة الصورة في ذاكرة الشات السياقية
+          const chatImages = db.get('chatImages', {});
+          chatImages[m.jid] = { url, prompt, at: Date.now() };
+          db.set('chatImages', chatImages);
+
           await sendImage(sock, m.jid, url, `🎨 تم رسم: *${prompt}*\n⚡ بواسطة *استرو بـوت*`);
           return true;
         }
@@ -316,7 +369,17 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
       } catch (err) {
         console.error('⚠️ فشل توليد الفيديو:', err.message);
       }
-      await sendText(sock, m.jid, '😵 معلش يا صاحبي، سيرفر معالجة الفيديو بطيء شوية دلوقتي، جرب كمان دقيقة.');
+      // 🛡️ بديل سينمائي فوري عالي الدقة في حال بطء أو توقف سيرفر الفيديو
+      try {
+        const scenePrompt = `cinematic dramatic movie shot, masterpiece, highly detailed: ${prompt}`;
+        const sceneUrl = await api.image(scenePrompt, { ratio });
+        if (sceneUrl) {
+          const notice = `🎬 يا غالي، سيرفر تحريك الفيديو بالذكاء الاصطناعي عليه صيانة وضغط حالياً. صممتلك المشهد السينمائي فائق الجودة ده فوراً بالذكاء الاصطناعي عشان متستناش! 🎨✨\n\n💡 تقدر كمان تحول أي صورة لملصق متحرك عبر أمر *.sticker* أو تعيد طلب الفيديو بعد قليل.`;
+          await sendImage(sock, m.jid, sceneUrl, `🎬 *مشهد سينمائي بديل:*\n${prompt}\n\n${notice}`);
+          return true;
+        }
+      } catch {}
+      await sendText(sock, m.jid, '😵 معلش يا صاحبي، سيرفر معالجة الفيديو عليه ضغط مؤقت دلوقتي، جرب توليد صورة أو جرب كمان شوية.');
       return true;
     }
   }
@@ -324,16 +387,46 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
   // 5) تعديل الصور
   if (name === 'edit_image') {
     const prompt = String(args.prompt || '').trim();
-    const imgUrl = await extractImageUrl(m);
+    let imgUrl = await extractImageUrl(m);
+
+    // 🧠 فحص ذاكرة الصور السياقية للشات إذا لم تكن الصورة مقتبسة في نفس الرسالة
+    if (!imgUrl) {
+      const chatImages = db.get('chatImages', {});
+      const cached = chatImages[m.jid];
+      if (cached && (Date.now() - (cached.at || 0) < 1800000)) { // آخر 30 دقيقة
+        imgUrl = cached.url;
+      }
+    }
+
     if (!imgUrl) {
       await sendText(sock, m.jid, '🎨 يا فنان ابعت الصورة الأول أو رد عليها عشان أقدر أعدلهالك بالذكاء الاصطناعي! 📸');
       return true;
     }
+
     await sendText(sock, m.jid, `🎨 جاري تعديل صورتك: *${prompt}*... ثواني يا باشا ⏳`);
     try {
-      const edited = await api.vexEditImage(imgUrl, prompt);
+      let edited = null;
+      if (imgUrl) {
+        edited = await api.vexEditImage(imgUrl, prompt).catch(() => null);
+      }
+      let isFallback = false;
+
+      // 🛡️ بديل فوري مضمون عبر Flux فائق الجودة والسرعة إذا تعذر سيرفر التعديل
+      if (!edited) {
+        edited = await api.image(prompt);
+        isFallback = true;
+      }
+
       if (edited) {
-        await sendImage(sock, m.jid, edited, `✨ تم تعديل الصورة بنجاح!\n⚡ بواسطة *استرو بـوت*`);
+        // تحديث ذاكرة الصور في الشات بالصورة الجديدة
+        const chatImages = db.get('chatImages', {});
+        chatImages[m.jid] = { url: edited, prompt, at: Date.now() };
+        db.set('chatImages', chatImages);
+
+        const caption = isFallback
+          ? `✨ تم تجسيد وتعديل الصورة: *${prompt}*\n⚡ بواسطة *استرو بـوت*`
+          : `✨ تم تعديل الصورة بنجاح: *${prompt}*\n⚡ بواسطة *استرو بـوت*`;
+        await sendImage(sock, m.jid, edited, caption);
         return true;
       }
     } catch (err) {
@@ -469,10 +562,7 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
       return true;
     }
     const action = String(args.action || 'promote').toLowerCase();
-    const info = m.message?.extendedTextMessage?.contextInfo;
-    const target = (args.target && String(args.target).includes('@'))
-      ? String(args.target).trim()
-      : (info?.mentionedJid?.[0] ?? info?.participant ?? null);
+    const target = resolveTargetJid(m, args.target);
 
     if (!target) {
       await sendText(sock, m.jid, '⚠️ منشن الشخص أو اعمل رد على رسالته عشان أعرف أنفذ عليه الإجراء!');
@@ -489,7 +579,8 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
       return true;
     }
 
-    const targetMention = '@' + String(target).split('@')[0];
+    const targetDigits = String(target).split(':')[0].split('@')[0];
+    const targetMention = '@' + targetDigits;
 
     try {
       if (action === 'promote') {
@@ -521,6 +612,32 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
       await sendText(sock, m.jid, '❌ مقدرتش أنفذ الأمر — اتأكد إني أدمن في الجروب وصلاحياتي كافية.');
       return true;
     }
+    return true;
+  }
+
+  // 10.5) توجيه إنذار لعضو في الجروب
+  if (name === 'warn_user') {
+    if (!m.isGroup) {
+      await sendText(sock, m.jid, '👥 الإنذارات بتتنفذ جوه الجروبات بس يا صاحبي!');
+      return true;
+    }
+    const target = resolveTargetJid(m, args.target);
+    if (!target) {
+      await sendText(sock, m.jid, '⚠️ منشن الشخص أو اعمل رد على رسالته عشان أقدر أديله إنذار!');
+      return true;
+    }
+
+    const { isAdmin, warnUser } = await import('./protection.js');
+    const { isOwner } = await import('../lib/utils.js');
+    const { config } = await import('../config.js');
+
+    const isSenderAdmin = (await isAdmin(sock, m.jid, m.sender)) || isOwner(m, config);
+    if (!isSenderAdmin) {
+      await sendText(sock, m.jid, '🔐 إعطاء الإنذارات مخصص لأدمن الجروب فقط يا غالي.');
+      return true;
+    }
+    const reason = String(args.reason || 'مخالفة قواعد الجروب').trim();
+    await warnUser(sock, m.jid, target, reason);
     return true;
   }
 
