@@ -28,7 +28,7 @@ export async function chatInceptionPrimary({
   reasoningEffort = config.inceptionReasoning || 'medium',
   maxTokens = 800,
   temperature = 0.7,
-  timeout = 18000,
+  timeout = 30000,
 } = {}) {
   const apiKey = (config.inceptionApiKey && config.inceptionApiKey.trim())
     ? config.inceptionApiKey.trim()
@@ -36,13 +36,17 @@ export async function chatInceptionPrimary({
 
   const payloadMessages = [];
   if (system) {
-    payloadMessages.push({ role: 'system', content: system });
+    payloadMessages.push({ role: 'system', content: String(system) });
   }
 
+  const VALID_ROLES = new Set(['system', 'user', 'assistant', 'tool', 'function']);
   for (const m of messages) {
-    if (m?.content) {
+    if (m?.content !== undefined && m?.content !== null) {
+      let role = String(m.role || 'user').toLowerCase();
+      if (role === 'bot') role = 'assistant';
+      if (!VALID_ROLES.has(role)) role = 'user';
       payloadMessages.push({
-        role: m.role || 'user',
+        role,
         content: String(m.content),
       });
     }

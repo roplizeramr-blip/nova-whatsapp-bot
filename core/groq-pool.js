@@ -197,20 +197,26 @@ class GroqKeyPool {
     const errMsg = String(errorData?.error?.message || errorData?.message || '').toLowerCase();
 
     // فحص هل هو حد يومي (RPD / TPD) أو حد دقيقة (RPM / TPM)
-    const isDaily = errMsg.includes('day') || errMsg.includes('daily') || errMsg.includes('per day');
+    const isDaily = /\b(?:per[\s_-]?day|daily|requests\s+per\s+day|tokens\s+per\s+day|rpd|tpd)\b/i.test(errMsg) && !errMsg.includes('try again in');
     if (isDaily) {
       state.dailyExhausted = true;
       state.dailyExhaustedAt = now;
       state.cooldownUntil = now + 12 * 60 * 60 * 1000; // كولداون 12 ساعة
       console.warn(`🛑 [Groq Pool] المفتاح ${keyIndex + 1} (${state.masked}) وصل للحد اليومي!`);
     } else {
-      // استخراج وقت إعادة التعيين من الهيدرز إن وجد، أو الافتراضي 60 ثانية
-      let waitSeconds = 60;
-      if (headers['x-ratelimit-reset-requests']) {
+      // استخراج وقت إعادة التعيين من رسالة الخطأ أو الهيدرز إن وجد، أو الافتراضي 5 ثوان
+      let waitSeconds = 5;
+      const retryMatch = /try again in\s+([0-9.]+)\s*s/i.exec(errMsg);
+      if (retryMatch) {
+        waitSeconds = Math.ceil(parseFloat(retryMatch[1])) + 1;
+      } else if (headers['retry-after']) {
+        const raw = parseFloat(headers['retry-after']);
+        if (!isNaN(raw) && raw > 0) waitSeconds = Math.ceil(raw);
+      } else if (headers['x-ratelimit-reset-requests']) {
         const raw = parseFloat(headers['x-ratelimit-reset-requests']);
         if (!isNaN(raw) && raw > 0) waitSeconds = Math.ceil(raw);
       }
-      state.cooldownUntil = now + Math.min(waitSeconds * 1000, 90000);
+      state.cooldownUntil = now + Math.min(waitSeconds * 1000, 60000);
       console.warn(`⏳ [Groq Pool] المفتاح ${keyIndex + 1} (${state.masked}) تحت الكولداون لمدة ${waitSeconds} ثانية`);
     }
 
@@ -284,6 +290,8 @@ export async function chatGroqPrimary({
   system = '',
   messages = [],
   image = null,
+  tools = null,
+  toolChoice = 'auto',
   model = config.groqModel || 'qwen/qwen3.8-27b',
   maxTokens = 450,
   temperature = 0.7,
@@ -295,7 +303,7 @@ export async function chatGroqPrimary({
   // تجهيز مصفوفة الرسائل
   const payloadMessages = [];
   if (system) {
-    payloadMessages.push({ role: 'system', content: system });
+    payloadMessages.push({ role: 'system', content: String(system) });
   }
 
   // تجهيز الصورة إن وجدت (Groq Vision)
@@ -304,9 +312,13 @@ export async function chatGroqPrimary({
     visionDataUri = await formatImageForGroq(image);
   }
 
+  const VALID_ROLES = new Set(['system', 'user', 'assistant', 'tool', 'function']);
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
-    const isLastUser = i === messages.length - 1 && m.role === 'user';
+    let role = String(m.role || 'user').toLowerCase();
+    if (role === 'bot') role = 'assistant';
+    if (!VALID_ROLES.has(role)) role = 'user';
+    const isLastUser = i === messages.length - 1 && role === 'user';
 
     // إذا كانت هذه آخر رسالة مستخدم ومعها صورة، نمررها بصيغة Vision content array
     if (isLastUser && visionDataUri) {
@@ -319,7 +331,7 @@ export async function chatGroqPrimary({
       });
     } else {
       payloadMessages.push({
-        role: m.role || 'user',
+        role,
         content: String(m.content || ''),
       });
     }
@@ -331,15 +343,22 @@ export async function chatGroqPrimary({
     keyState.requestsCount++;
     const startTime = Date.now();
 
+    const requestPayload = {
+      model,
+      messages: payloadMessages,
+      max_tokens: maxTokens,
+      temperature,
+    };
+
+    if (tools && Array.isArray(tools) && tools.length > 0) {
+      requestPayload.tools = tools;
+      requestPayload.tool_choice = toolChoice;
+    }
+
     try {
       const res = await axios.post(
         'https://api.groq.com/openai/v1/chat/completions',
-        {
-          model,
-          messages: payloadMessages,
-          max_tokens: maxTokens,
-          temperature,
-        },
+        requestPayload,
         {
           headers: {
             Authorization: `Bearer ${keyState.key}`,
@@ -351,16 +370,37 @@ export async function chatGroqPrimary({
       );
 
       const speedMs = Date.now() - startTime;
-      const rawContent = res.data?.choices?.[0]?.message?.content || '';
+      const choice = res.data?.choices?.[0];
+      const msgObj = choice?.message || {};
+      const rawContent = (msgObj.content || '').trim();
       const usage = res.data?.usage || null;
 
-      // استخراج القرارات والأدوات الذكية من الرد
-      const { cleanText, tools } = extractAgentTools(rawContent);
+      // استخراج استدعاءات الأدوات الرسمية بنظام OpenAI / MCP
+      const officialToolCalls = (msgObj.tool_calls || []).map((tc) => {
+        let args = {};
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch {
+          args = { raw: tc.function.arguments };
+        }
+        return {
+          id: tc.id,
+          name: tc.function.name,
+          arguments: args,
+          rawArgs: tc.function.arguments,
+        };
+      });
+
+      // استخراج القرارات والأدوات الذكية من النص كـ fallback
+      const { cleanText, tools: textTools } = extractAgentTools(rawContent);
+
+      const allTools = [...officialToolCalls, ...textTools];
 
       return {
         reply: cleanText || rawContent,
         rawReply: rawContent,
-        tools: tools || [],
+        toolCalls: allTools,
+        tools: allTools,
         usage,
         speedMs,
         model,

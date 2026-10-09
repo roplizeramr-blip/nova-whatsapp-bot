@@ -147,6 +147,20 @@ function buildInstruction(profile, pushName, contact, { voice, extra, mood, mode
   const { block } = contextBlock(profile, pushName, Math.max(100, budget - used - 30), text);
   if (block) parts.push('معلومات عنه:\n' + block);
 
+  // 🛠️ تعليمات الأدوات الذكية (Agent Tools Directive)
+  parts.push(
+    '🛠️ أنت مجهز بأدوات حقيقية (Tools/Functions) لتنفيذ مهام المستخدم مباشرة على السيرفر وواتساب:\n' +
+    '- إذا طلب المستخدم تشغيل أي لعبة تفاعلية (إكس أو، تخمين، مسابقة، إلخ) استدعِ فوراً أداة play_game ولا تحاول رسم اللوحة نصياً.\n' +
+    '- إذا طلب المستخدم سماع أو تحميل أغنية أو مهرجان أو تراك موسيقي، استدعِ فوراً أداة download_song.\n' +
+    '- إذا طلب رسم أو توليد صورة، استدعِ generate_image.\n' +
+    '- إذا طلب صناعة فيديو، استدعِ generate_video.\n' +
+    '- إذا طلب تعديل صورة، استدعِ edit_image، وإذا طلب إزالة خلفية استدعِ remove_bg.\n' +
+    '- إذا طلب نطق كلام بصوت مشهور (نيمار، ميسي، إلخ)، استدعِ celebrity_voice.\n' +
+    '- إذا طلب البحث في أكوام أو تطبيقات أندرويد APK، استدعِ search_media.\n' +
+    '- إذا طلب عرض الأوامر أو المنيو، استدعِ show_menu.\n' +
+    '⚠️ لا تعتذر ولا تقل أنك لا تستطيع ولا تجب بنص عادي على طلبات الأدوات، بل استدعِ الأداة المناسبة فوراً!'
+  );
+
   if (voice) parts.push('ردك هيتبعت صوت — جملة واحدة بس.');
   if (extra) parts.push(extra);
 
@@ -442,7 +456,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
       tools: AGENT_TOOLS_SPEC,
       maxTokens: allowLong ? 900 : (voice ? 250 : 700),
       temperature: variants > 0 ? 0.85 : 0.65,
-      timeout: 18000,
+      timeout: 30000,
     });
 
     if (res) {
@@ -465,7 +479,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
       }
     }
   } catch (err) {
-    console.warn('⚠️ [Inception Brain] خطأ في الاستدعاء، جاري التحويل الفوري لـ Groq:', err.message);
+    console.warn('⚠️ [Inception Brain] خطأ في الاستدعاء، جاري التحويل الفوري لـ Groq:', err.message, err.response?.data);
   }
 
   // 🧠 3) العقل البديل الفوري: Groq Key Pool (Qwen 3.8-27B) مع تدوير المفاتيح الثلاثة
@@ -473,22 +487,24 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     const res = await chatGroqPrimary({
       system: isInsult ? roastInstruction : fullInstruction,
       messages: [...convo, userMsg],
+      tools: AGENT_TOOLS_SPEC,
       maxTokens: allowLong ? 600 : (voice ? 200 : 380),
       temperature: variants > 0 ? 0.85 : 0.65,
       timeout: 15000,
     });
 
-    if (res?.reply) {
-      let clean = polishReply(res.reply, { allowLong });
+    if (res) {
+      let clean = polishReply(res.reply || '', { allowLong });
       if (isDev && /(?:مش عارفك|لا أعرفك|مين انت|من أنت|لا أستطيع معرفتك)/i.test(clean)) {
         clean = 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي 👑❤️ أؤمرني يا ريس، كل طلباتك مجابة فوراً!';
       }
-      if (!isErrorText(clean)) {
+      const tools = res.toolCalls || res.tools || [];
+      if (tools.length > 0 || (!isErrorText(clean) && clean.length > 0)) {
         return {
           reply: clean,
           rawReply: res.rawReply,
-          toolCalls: res.tools || [],
-          tools: res.tools || [],
+          toolCalls: tools,
+          tools: tools,
           engine: 'groq-' + (res.model || 'qwen'),
           speedMs: res.speedMs,
           keyIndex: res.keyIndex,

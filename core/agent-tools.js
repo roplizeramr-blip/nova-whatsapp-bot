@@ -23,7 +23,7 @@ export const AGENT_TOOLS_SPEC = [
     type: 'function',
     function: {
       name: 'play_game',
-      description: 'بدء أو تشغيل لعبة تفاعلية مثل إكس أو (xo)، تخمين الرقم (guess)، مسابقات (quiz)، رياضيات (math)، المشنقة (hang)، حجر ورقة مقص (rps)، صراحة وجرأة (truth_dare)، ترتيب الحروف (scramble)، خمن العلم (flags). استخدم هذه الدالة عندما يطلب المستخدم لعب أو تشغيل أي لعبة أو يقول "شغلها" مشيراً للعبة.',
+      description: 'بدء أو تشغيل لعبة تفاعلية مثل إكس أو (xo)، تخمين الرقم (guess)، مسابقات (quiz)، رياضيات (math)، المشنقة (hang)، حجر ورقة مقص (rps)، صراحة وجرأة (truth_dare)، ترتيب الحروف (scramble)، خمن العلم (flags). استدعِ هذه الأداة فوراً عندما يطلب المستخدم "العب معايا" أو "شغل لعبة" أو "عايز العب" أو "اكس او" أو "xo".',
       parameters: {
         type: 'object',
         properties: {
@@ -41,7 +41,7 @@ export const AGENT_TOOLS_SPEC = [
     type: 'function',
     function: {
       name: 'download_song',
-      description: 'البحث عن أغنية أو مهرجان أو تراك موسيقي وتحميله بصيغة صوت أو فيديو وعرض قائمة النتائج. استخدمها عندما يطلب المستخدم سماع أو تحميل أغنية أو مهرجان بالاسم.',
+      description: 'البحث عن أغنية أو مهرجان أو تراك موسيقي وتحميله بصيغة صوت أو فيديو وعرض قائمة النتائج في واتساب. استدعِ هذه الأداة فوراً عندما يطلب المستخدم "حمل اغنية" أو "شغل اغنية" أو "عايز اغنية" أو "نزل اغنية" أو "مهرجان كذا" أو "اغنية كذا" أو "اسمع كذا".',
       parameters: {
         type: 'object',
         properties: {
@@ -58,7 +58,7 @@ export const AGENT_TOOLS_SPEC = [
     type: 'function',
     function: {
       name: 'generate_image',
-      description: 'رسم وتوليد صورة بالذكاء الاصطناعي بناءً على وصف تخيلي أو فني من المستخدم.',
+      description: 'رسم وتوليد صورة بالذكاء الاصطناعي بناءً على وصف المستخدم. استدعِ هذه الأداة فوراً عندما يطلب المستخدم: "ارسم", "ارسم لي", "عايز صورة", "صورة لـ", "توليد صورة", "رسمة", "اصنع صورة", "draw", "generate image".',
       parameters: {
         type: 'object',
         properties: {
@@ -75,7 +75,7 @@ export const AGENT_TOOLS_SPEC = [
     type: 'function',
     function: {
       name: 'generate_video',
-      description: 'صناعة وتوليد مقطع فيديو بالذكاء الاصطناعي.',
+      description: 'صناعة وتوليد مقطع فيديو بالذكاء الاصطناعي. استدعِ هذه الأداة فوراً عندما يطلب المستخدم: "فيديو لـ", "اعملي فيديو", "سوي فيديو", "اصنع فيديو", "توليد فيديو", "generate video".',
       parameters: {
         type: 'object',
         properties: {
@@ -117,7 +117,12 @@ export const AGENT_TOOLS_SPEC = [
       description: 'إزالة وتفريغ خلفية الصورة المرفقة أو المقتبسة وجعلها شفافة.',
       parameters: {
         type: 'object',
-        properties: {},
+        properties: {
+          image_url: {
+            type: 'string',
+            description: 'رابط الصورة اختياري إذا لم تكن مرفقة بالرسالة',
+          },
+        },
       },
     },
   },
