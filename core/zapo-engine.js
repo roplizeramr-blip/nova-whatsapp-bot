@@ -1,150 +1,211 @@
-import { readFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WaClient, createStore, createPinoLogger } from 'zapo-js';
-import { createSqliteStore } from '@zapo-js/store-sqlite';
-import { voipPlugin, CallState, EndCallReason } from '@zapo-js/voip';
-import { migrate, bufferJsonReviver } from 'wa-store-migrate';
+import { WaClient, createStore, createNoopLogger } from 'zapo-js';
+import { voipPlugin } from '@zapo-js/voip';
 import { GeminiLiveSession } from './gemini-live.js';
-import { config } from '../config.js';
+import { config, CONTACTS } from '../config.js';
+import { getDbPool, isDbConfigured } from './postgres.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SESSION_DIR = join(__dirname, '..', 'session');
-const ZAPO_AUTH_DIR = join(__dirname, '..', '.auth');
-const ZAPO_SQLITE_PATH = join(ZAPO_AUTH_DIR, 'zapo_voip.sqlite');
+const VOIP_SESSION_DIR = join(__dirname, '..', 'session_voip');
 
 const activeCallSessions = new Map();
 let currentZapoClient = null;
+let currentBaileysSock = null;
+let zapoConnecting = false;
 
 /**
- * Reads multi-file Baileys auth folder and transforms it into a BaileysAuthSnapshot
+ * استرجاع ملفات جلسة VoIP من قاعدة بيانات PostgreSQL
  */
-function readBaileysSnapshot(dir) {
-  const credsPath = join(dir, 'creds.json');
-  if (!existsSync(credsPath)) return null;
-
+async function restoreVoipSessionFromDb() {
+  if (!isDbConfigured()) return 0;
   try {
-    const creds = JSON.parse(readFileSync(credsPath, 'utf-8'), bufferJsonReviver);
-    const keys = {};
+    const pool = await getDbPool();
+    if (!pool) return 0;
 
-    for (const f of readdirSync(dir)) {
-      if (f === 'creds.json' || !f.endsWith('.json')) continue;
-      const m = /^([a-z-]+)-(.+)\.json$/i.exec(f);
-      if (!m) continue;
-      const id = m[2].replace(/__/g, '/').replace(/-/g, ':');
-      (keys[m[1]] ??= {})[id] = JSON.parse(
-        readFileSync(join(dir, f), 'utf-8'),
-        bufferJsonReviver
-      );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS session_voip_storage (\n        key VARCHAR(512) PRIMARY KEY,\n        value TEXT NOT NULL,\n        updated_at TIMESTAMPTZ DEFAULT NOW()\n      );
+    `);
+
+    const res = await pool.query('SELECT key, value FROM session_voip_storage');
+    if (!res.rows || !res.rows.length) {
+      console.log('ℹ️ [VOIP] لم يتم العثور على جلسة VoIP سابقة في PostgreSQL');
+      return 0;
     }
-    return { creds, keys };
+
+    mkdirSync(VOIP_SESSION_DIR, { recursive: true });
+    let count = 0;
+    for (const row of res.rows) {
+      if (!row.key || typeof row.value !== 'string') continue;
+      const target = join(VOIP_SESSION_DIR, row.key);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, row.value, 'utf8');
+      count++;
+    }
+
+    console.log(`📦 [VOIP] تم استرجاع ${count} ملف لجلسة VoIP من PostgreSQL`);
+    return count;
   } catch (err) {
-    console.warn('⚠️ فشل قراءة لقطة جلسة Baileys:', err.message);
-    return null;
+    console.warn('⚠️ [VOIP] تعذر استرجاع جلسة VoIP من PostgreSQL:', err.message?.slice(0, 100));
+    return 0;
   }
 }
 
 /**
- * Migrates Baileys multi-file auth into Zapo SQLite store
+ * حفظ ملفات جلسة VoIP إلى PostgreSQL
  */
-export async function migrateBaileysToZapo(baileysDir = SESSION_DIR, sqlitePath = ZAPO_SQLITE_PATH) {
-  mkdirSync(dirname(sqlitePath), { recursive: true });
-
-  const baileysSnapshot = readBaileysSnapshot(baileysDir);
-  if (!baileysSnapshot) {
-    console.log('ℹ️ لم يتم العثور على ملفات جلسة Baileys للترحيل إلى Zapo');
-    return null;
-  }
-
-  console.log('🔄 جاري ترحيل جلسة واتساب إلى محرك Zapo VoIP...');
-  const { data, losses } = migrate({ from: 'baileys', to: 'zapo', data: baileysSnapshot });
-
-  const store = createStore({
-    backends: { sqlite: createSqliteStore({ path: sqlitePath, driver: 'auto' }) },
-    providers: {
-      auth: 'sqlite', signal: 'sqlite', preKey: 'sqlite', session: 'sqlite',
-      identity: 'sqlite', senderKey: 'sqlite', appState: 'sqlite',
-      privacyToken: 'sqlite',
-      messages: 'none', threads: 'none', contacts: 'none'
-    }
-  });
-
-  const s = store.session('default');
-  await s.auth.save(data.credentials);
-  for (const k of data.preKeys ?? []) await s.preKey.putPreKey(k);
-  if (data.identities?.length) {
-    await s.identity.setRemoteIdentities(
-      data.identities.map((i) => ({ address: i.address, identityKey: i.identityKey }))
-    );
-  }
-  if (data.sessions?.length) {
-    await s.session.setSessionsBatch(
-      data.sessions.map((x) => ({ address: x.address, session: x.record }))
-    );
-  }
-  for (const sk of data.senderKeys ?? []) await s.senderKey.upsertSenderKey(sk.record);
-  if (data.appState?.keys?.length) await s.appState.upsertSyncKeys(data.appState.keys);
-  if (data.privacyTokens?.length) await s.privacyToken.upsertBatch(data.privacyTokens);
-
-  console.log('✅ تم ترحيل جلسة واتساب بنجاح إلى قاعدة بيانات Zapo VoIP');
-  return store;
-}
-
-/**
- * Starts the Native In-App WhatsApp VoIP engine using Zapo & Gemini 3.8 Live
- */
-export async function startZapoVoipEngine(customStore = null) {
+async function syncVoipSessionToDb() {
+  if (!isDbConfigured() || !existsSync(VOIP_SESSION_DIR)) return 0;
   try {
-    const logger = await createPinoLogger({ level: 'silent' });
-    let store = customStore;
+    const pool = await getDbPool();
+    if (!pool) return 0;
 
-    if (!store) {
-      if (existsSync(SESSION_DIR) && existsSync(join(SESSION_DIR, 'creds.json'))) {
-        store = await migrateBaileysToZapo(SESSION_DIR, ZAPO_SQLITE_PATH);
-      } else if (existsSync(ZAPO_SQLITE_PATH)) {
-        store = createStore({
-          backends: { sqlite: createSqliteStore({ path: ZAPO_SQLITE_PATH, driver: 'auto' }) },
-          providers: {
-            auth: 'sqlite', signal: 'sqlite', preKey: 'sqlite', session: 'sqlite',
-            identity: 'sqlite', senderKey: 'sqlite', appState: 'sqlite',
-            privacyToken: 'sqlite',
-            messages: 'none', threads: 'none', contacts: 'none'
-          }
-        });
+    const files = [];
+    function scanDir(dir) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) scanDir(full);
+        else files.push({ full, rel: relative(VOIP_SESSION_DIR, full).replace(/\\/g, '/') });
       }
     }
+    scanDir(VOIP_SESSION_DIR);
 
-    if (!store) {
-      console.log('ℹ️ محرك Zapo VoIP في وضع الانتظار حتى اكتمال تسجيل جلسة واتساب');
-      return null;
+    if (!files.length) return 0;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const f of files) {
+        let content;
+        try {
+          content = readFileSync(f.full, 'utf8');
+        } catch {
+          continue;
+        }
+        await client.query(
+          `INSERT INTO session_voip_storage (key, value, updated_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+          [f.rel, content]
+        );
+      }
+      await client.query('COMMIT');
+      console.log(`💾 [VOIP] تم حفظ ومزامنة ${files.length} ملف لجلسة VoIP في PostgreSQL`);
+      return files.length;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
+  } catch (err) {
+    console.warn('⚠️ [VOIP] فشل حفظ جلسة VoIP في PostgreSQL:', err.message?.slice(0, 100));
+    return 0;
+  }
+}
+
+/**
+ * تشغيل محرك مكالمات واتساب الأصلية داخل التطبيق (Native In-App VoIP Call)
+ */
+export async function startZapoVoipEngine(customStore = null, baileysSock = null) {
+  if (currentZapoClient) return currentZapoClient;
+  if (baileysSock) currentBaileysSock = baileysSock;
+
+  try {
+    console.log('⚡ [VOIP] جاري بدء تهيئة محرك المكالمات الحية داخل واتساب (Zapo VoIP Engine)...');
+
+    // استرجاع جلسة VoIP السحابية إن وُجدت
+    await restoreVoipSessionFromDb().catch(() => {});
+
+    const store = customStore || createStore();
+    const logger = createNoopLogger();
 
     const client = new WaClient(
       {
         store,
-        sessionId: 'default',
-        connectTimeoutMs: 20000,
+        sessionId: 'voip',
+        connectTimeoutMs: 30000,
         deviceBrowser: 'Chrome',
         deviceOsDisplayName: 'Windows',
-        plugins: [voipPlugin({ maxConcurrentCalls: 1, logLevel: 'warn' })]
+        plugins: [
+          voipPlugin({
+            maxConcurrentCalls: 1,
+            logLevel: 'warn'
+          })
+        ]
       },
       logger
     );
 
     currentZapoClient = client;
 
-    // 📞 1. التقاط المكالمة الواردة من تطبيق واتساب نفسه والرد الفوري
+    // 🔢 1. طلب كود الربط عند الحاجة إلى تسجيل جهاز المكالمات التابع
+    client.on('auth_pairing_required', async () => {
+      console.log('\n======================================================');
+      console.log('🔢 [NATIVE-VOIP] جاري طلب كود تفعيل المكالمات الصوتية المباشرة...');
+      try {
+        const phone = String(config.pairingPhone || '201226110887').replace(/\D/g, '');
+        const rawCode = await client.auth.requestPairingCode(phone);
+        const prettyCode = rawCode?.match(/.{1,4}/g)?.join('-') ?? rawCode;
+
+        console.log(`📞 [NATIVE-VOIP] كود تفعيل المكالمات الصوتية الحية: ${prettyCode}`);
+        console.log('======================================================\n');
+
+        // إرسال الكود فوراً للمالك ومطور البوت عبر واتساب
+        const ownerJid = '201044626335@s.whatsapp.net';
+        const devJid = '263488291246130@lid';
+
+        const pairingMsg =
+          `╭───『 📞 تـفـعـيـل مـكـالـمـات واتـسـاب الـحـيـة ⚡ 』───╮\n` +
+          `│\n` +
+          `│ 🎙️ *كود ربط جهاز المكالمات الصوتية المباشرة:*\n` +
+          `│ 🔢 *${prettyCode}*\n` +
+          `│\n` +
+          `│ 📲 خطوات التفعيل السريعة (مرة واحدة فقط):\n` +
+          `│ 1. افتح واتساب على هاتفك 📱\n` +
+          `│ 2. الإعدادات ⚙️ ⬅️ الأجهزة المرتبطة\n` +
+          `│ 3. اضغط "ربط جهاز" ⬅️ "الربط برقم الهاتف"\n` +
+          `│ 4. اكتب الكود: *${prettyCode}*\n` +
+          `│\n` +
+          `│ ⚡ شغال بنموذج: *Gemini 3.8 Live Extended Thinking*\n` +
+          `│ 🗣️ نفس شخصية استرو المصرية الجدعة وخفيفة الظل!\n` +
+          `│ بمجرد إدخال الكود، البوت هيرد مباشرة على أي رنة تليفون!\n` +
+          `╰─────────────────────────╯`;
+
+        if (currentBaileysSock) {
+          await currentBaileysSock.sendMessage(ownerJid, { text: pairingMsg }).catch(() => {});
+          await currentBaileysSock.sendMessage(devJid, { text: pairingMsg }).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('⚠️ [NATIVE-VOIP] تعذر طلب كود الربط:', err.message);
+      }
+    });
+
+    // 🎉 2. عند اكتمال الربط بنجاح
+    client.on('auth_paired', async () => {
+      console.log('🎉 [NATIVE-VOIP] تم ربط جهاز المكالمات الصوتية بنجاح بنظام الأجهزة المتعددة!');
+      await syncVoipSessionToDb().catch(() => {});
+
+      if (currentBaileysSock) {
+        const successMsg = '🎉 *تم تفعيل مكالمات واتساب الصوتية الحية بنجاح 100%!* أسترو جاهز الآن للرد المباشر داخل واتساب والتحدث بالصوت المصري الذكي ⚡';
+        currentBaileysSock.sendMessage('201044626335@s.whatsapp.net', { text: successMsg }).catch(() => {});
+        currentBaileysSock.sendMessage('263488291246130@lid', { text: successMsg }).catch(() => {});
+      }
+    });
+
+    // 📞 3. الرد التلقائي المباشر على المكالمة الواردة داخل شاشة واتساب
     client.on('voip_call_incoming', async (call) => {
       console.log(`\n📞 [NATIVE-VOIP] مكالمة واردة من داخل واتساب! من: ${call.peerJid} (ID: ${call.callId})`);
       if (!call.canAccept) {
-        console.warn(`[NATIVE-VOIP] تعذر قبول المكالمة ${call.callId} — الخط مشغول`);
+        console.warn(`[NATIVE-VOIP] تعذر قبول المكالمة ${call.callId} — الخط مشغول أو الحالة غير متاحة`);
         return;
       }
 
       try {
-        console.log(`⚡ [NATIVE-VOIP] جاري الرد وقبول المكالمة داخل واتساب...`);
+        console.log(`⚡ [NATIVE-VOIP] جاري الرد وقبول المكالمة داخل واتساب مباشرة...`);
         await client.voip.acceptCall(call.callId);
-        console.log(`🟢 [NATIVE-VOIP] تم الرد على المكالمة بنجاح! المكالمة نشطة الآن في هاتف المستخدم`);
+        console.log(`🟢 [NATIVE-VOIP] تم الرد على المكالمة بنجاح! المكالمة نشطة الآن في هاتف المتصل`);
 
         // تفعيل وضع التغذية الصوتية المباشرة
         client.voip.setExternalAudioMode(call.callId, true);
@@ -157,8 +218,7 @@ export async function startZapoVoipEngine(customStore = null) {
 
         liveSession.on('ready', () => {
           console.log(`🎙️ [NATIVE-VOIP] جلسة Gemini 3.8 Live جاهزة للمكالمة ${call.callId}`);
-          // استرو يبدأ المكالمة بترحيب فوري
-          liveSession.sendText('المكالمة فتحت الآن.. رحب بالمتصل باللهجة المصرية كأنك فتحت الخط وبترد في التليفون: ألو يا فنان! ألو يا غالي! أسترو معاك، سامعك يا باشا قولّي إيه الأخبار؟');
+          liveSession.sendText('المكالمة فتحت الآن في هاتف المتصل.. رحب بالمتصل باللهجة المصرية كأنك فتحت الخط وبترد في التليفون: ألو يا فنان! ألو يا غالي! أسترو معاك، سامعك يا باشا قولّي إيه الأخبار؟');
         });
 
         // 🔊 صوت استرو يخرج مباشرة في سماعة هاتف المتصل داخل واتساب
@@ -168,10 +228,6 @@ export async function startZapoVoipEngine(customStore = null) {
           } catch (e) {
             console.warn('[NATIVE-VOIP] تعذر بث الصوت في المكالمة:', e.message);
           }
-        });
-
-        liveSession.on('turnComplete', () => {
-          // جاهز للاستماع للرد التالي
         });
 
         liveSession.on('error', (err) => {
@@ -185,18 +241,17 @@ export async function startZapoVoipEngine(customStore = null) {
       }
     });
 
-    // 🎤 2. استلام صوت المتصل من المايكروفون في واتساب وإرساله فوراً لـ Gemini 3.8 Live
+    // 🎤 4. استلام صوت المتصل من مايكروفون واتساب وإرساله فوراً إلى Gemini 3.8 Live
     client.on('voip_call_inbound_audio', ({ call, pcm }) => {
       const liveSession = activeCallSessions.get(call.callId);
       if (liveSession && liveSession.ready) {
-        // pcm هو Float32Array بتردد 16kHz
         liveSession.sendAudio(pcm);
       }
     });
 
-    // 📴 3. إغلاق المكالمة وتنظيف الذاكرة
+    // 📴 5. إغلاق المكالمة وتنظيف الذاكرة
     client.on('voip_call_ended', (call) => {
-      const reason = call.stateData.endReason || 'unknown';
+      const reason = call.stateData?.endReason || 'unknown';
       console.log(`📴 [NATIVE-VOIP] انتهت المكالمة: ${call.callId} (السبب: ${reason})`);
       const liveSession = activeCallSessions.get(call.callId);
       if (liveSession) {
@@ -206,10 +261,23 @@ export async function startZapoVoipEngine(customStore = null) {
     });
 
     client.on('connection', (event) => {
-      console.log(`[NATIVE-VOIP:CONN] حالة الاتصال: ${event.status}`);
+      console.log(`[NATIVE-VOIP:CONN] حالة اتصال Zapo: ${event.status}`);
+      if (event.status === 'open') {
+        syncVoipSessionToDb().catch(() => {});
+      }
     });
 
-    console.log('🚀 [NATIVE-VOIP] تم إعداد محرك المكالمات الأصلية بنجاح — جاهز للاتصال');
+    // بدء الاتصال بواتساب في الخلفية دون تعطيل العملية الرئيسية
+    if (!zapoConnecting) {
+      zapoConnecting = true;
+      void client.connect().catch((err) => {
+        console.warn('ℹ️ [NATIVE-VOIP] حالة اتصال Zapo:', err.message);
+      }).finally(() => {
+        zapoConnecting = false;
+      });
+    }
+
+    console.log('🚀 [NATIVE-VOIP] تم إعداد وتشغيل محرك المكالمات الأصلية بنجاح');
     return client;
 
   } catch (err) {
@@ -223,7 +291,6 @@ export function getZapoClient() {
 }
 
 export default {
-  migrateBaileysToZapo,
   startZapoVoipEngine,
   getZapoClient
 };

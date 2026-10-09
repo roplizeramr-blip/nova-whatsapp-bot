@@ -77,6 +77,12 @@ export async function initDatabase() {
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS session_voip_storage (
+          key VARCHAR(512) PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
         CREATE TABLE IF NOT EXISTS bot_kv (
           key VARCHAR(255) PRIMARY KEY,
           value JSONB NOT NULL,

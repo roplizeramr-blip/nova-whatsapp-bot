@@ -17,7 +17,7 @@ export function initCallEngine(sock) {
 
   // محاولة تشغيل محرك Zapo VoIP للرد المباشر داخل شاشة واتساب
   setTimeout(() => {
-    startZapoVoipEngine()
+    startZapoVoipEngine(null, sock)
       .then((client) => {
         if (client) {
           attachZapoClient(client);
@@ -37,33 +37,14 @@ export function initCallEngine(sock) {
         console.log(`\n📞 [VOIP] مكالمة واردة من: ${callerJid} (Call ID: ${callId})`);
 
         try {
-          // 1. لو محرك Zapo VoIP شغال ومسجل، Zapo هو اللي هيقبل المكالمة ويبث الصوت
+          // 1. لو محرك Zapo VoIP شغال ومسجل، Zapo هو اللي هيقبل المكالمة ويبث الصوت داخل واتساب
           if (zapoActive && zapoClient) {
             console.log(`[VOIP] محرك Zapo نشط — جاري التقاط المكالمة داخل واتساب...`);
             continue;
           }
 
           // 2. إذا لم تكن جلسة Zapo مكتملة بعد:
-          // الرد الصوتي الفوري على المستخدم بشخصية استرو الأصلية
-          const callUrl = `https://nova-bot-x3unfm.cranl.net/call`;
-
-          const greetingText = 
-            `╭───『 📞 مـكـالـمـة صـوتـيـة حـيـة ⚡ 』───╮\n` +
-            `│\n` +
-            `│ أهلاً بك يا غالي! استلمت رنتك حالا ⚡\n` +
-            `│\n` +
-            `│ 🎙️ *عايز تتكلم صوت مباشر مع أسترو بالمايك؟*\n` +
-            `│ اضغط على الرابط ده وافتح المايك وابدأ الكلام فوراً:\n` +
-            `│ 🔗 ${callUrl}\n` +
-            `│\n` +
-            `│ ⚡ شغال بنموذج: *Gemini 3.8 Live Extended Thinking*\n` +
-            `│ 🗣️ نفس شخصية استرو المصرية الجدعة وخفيفة الظل!\n` +
-            `│ أو ابعتلي أي رسالة صوتية (فويس) وهرد عليك فويس في ثانية! 🎧\n` +
-            `╰─────────────────────────╯`;
-
-          await sock.sendMessage(callerJid, { text: greetingText }).catch(() => {});
-
-          // توليد رد صوتي فوري عبر Gemini Live وبثه كـ Voice Note (PTT) بشخصية استرو
+          // توليد رد صوتي فوري عبر Gemini Live وبثه كـ Voice Note (PTT) مصري أصيل دون أي روابط نهائياً
           generateInstantLiveGreeting(sock, callerJid);
 
         } catch (err) {
@@ -110,7 +91,7 @@ async function generateInstantLiveGreeting(sock, toJid) {
     });
 
     await liveSession.connect();
-    liveSession.sendText('أنت استرو، المتصل رن عليك حالا في واتساب. افتح الكلام فوراً بترحيب مصري عامي سريع كأنك رديت في التليفون: ألو يا فنان! ألو يا غالي! أنا استرو.. استلمت رنتك يا باشا! افتح الرابط اللي بعتهولك فوق ونتكلم مباشر بالمايك أو ابعتلي فويس شات وأنا معاك يا كبير!');
+    liveSession.sendText('أنت استرو، المتصل رن عليك حالا في واتساب. افتح الكلام فوراً بترحيب مصري عامي سريع وخفيف الظل كأنك فتحت الخط وبترد في التليفون: ألو يا فنان! ألو يا غالي! أنا استرو.. استلمت رنتك يا باشا وسامعك يا كبير! ابعتلي فويس باللي في بالك وأنا معاك أرد عليك في ثانية!');
   } catch (err) {
     console.warn('⚠️ تعذر إرسال الفويس الفوري للمتصل:', err.message);
   }
