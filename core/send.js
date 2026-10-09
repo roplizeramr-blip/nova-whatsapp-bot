@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { MB } from '@rexxhayanasi/elaina-baileys';
 import { config } from '../config.js';
 import { bump } from './stats.js';
@@ -118,10 +119,11 @@ export async function sendAudio(sock, jid, audioUrl, extra = {}) {
 export async function sendImage(sock, jid, imageUrl, caption, extra = {}) {
   // ⚡ دعم فوري للـ Buffer المباشر بدون أي طلبات شبكة
   if (Buffer.isBuffer(imageUrl)) {
+    const isPng = imageUrl[0] === 0x89 && imageUrl[1] === 0x50;
     return await withRetry('إرسال صورة Buffer', () =>
       sock.sendMessage(jid, {
         image: imageUrl,
-        mimetype: 'image/jpeg',
+        mimetype: isPng ? 'image/png' : 'image/jpeg',
         caption,
         ...extra,
       }));
@@ -129,17 +131,45 @@ export async function sendImage(sock, jid, imageUrl, caption, extra = {}) {
 
   try {
     const { buffer, type } = await fetchMedia(imageUrl, { expect: 'image' });
+    const isPng = (buffer && buffer[0] === 0x89 && buffer[1] === 0x50) || /png/i.test(type);
+    const mime = isPng ? 'image/png' : 'image/jpeg';
     return await withRetry('إرسال الصورة', () =>
       sock.sendMessage(jid, {
         image: buffer,
-        mimetype: /jpe?g/i.test(type) ? 'image/jpeg' : type,
+        mimetype: mime,
         caption,
         ...extra,
       }));
   } catch (err) {
     console.warn('⚠️ فشل جلب الصورة عبر fetchMedia:', err.message?.slice(0, 70));
-    // محاولة إرسال الرابط مباشرة لـ Baileys ليتكفل واتساب بتحميله
+
+    // ⚡ محاولة تنزيل مباشر كـ Buffer مع User-Agent لتخطي أي حظر من CDN
     if (typeof imageUrl === 'string' && /^https?:\/\//i.test(imageUrl)) {
+      try {
+        const { data } = await axios.get(imageUrl, {
+          responseType: 'arraybuffer',
+          timeout: 15000,
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        });
+        const directBuf = Buffer.from(data);
+        if (directBuf.length >= 500) {
+          const isPng = directBuf[0] === 0x89 && directBuf[1] === 0x50;
+          return await withRetry('إرسال الصورة المباشرة', () =>
+            sock.sendMessage(jid, {
+              image: directBuf,
+              mimetype: isPng ? 'image/png' : 'image/jpeg',
+              caption,
+              ...extra,
+            }));
+        }
+      } catch (eDirect) {
+        console.warn('⚠️ فشل التنزيل المباشر بالـ Buffer:', eDirect.message?.slice(0, 70));
+      }
+
+      // محاولة إرسال الرابط مباشرة لـ Baileys ليتكفل واتساب بتحميله
       try {
         return await withRetry('إرسال رابط الصورة لـ Baileys', () =>
           sock.sendMessage(jid, {

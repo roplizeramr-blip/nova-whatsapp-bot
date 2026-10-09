@@ -226,9 +226,27 @@ export async function startBot() {
           }
         }
 
+        const memberCount = meta?.participants?.length ?? '—';
+        const cairoTime = new Date().toLocaleTimeString('ar-EG', {
+          timeZone: 'Africa/Cairo',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
         // 👑 تنبيه الترقية لأدمن مع صورة البروفايل
         if (action === 'promote') {
-          const promoteMsg = `🎉 *ألف مبروك الترقية يا* @${digits}! 👑✨\nتمت ترقيتك لمشرف وأدمن في جروب *${groupName}* — منور الإدارة وبالتوفيق يا كبير!`;
+          const promoteMsg =
+            `╭───『 👑 ألـف مـبـروك الـتـرقـيـة 👑 』───╮\n` +
+            `│\n` +
+            `│ 👤 المشرف الجديد: @${digits}\n` +
+            `│ 🏰 الجروب: *${groupName}*\n` +
+            `│ 🛡️ الرتبة: مسؤول ومشرف الجروب (Admin)\n` +
+            `│ ⏰ التوقيت: ${cairoTime} (بتوقيت القاهرة)\n` +
+            `│\n` +
+            `│ 🌟 ألف مبروك الثقة يا كبير ومنور الإدارة! 👑\n` +
+            `│ 🤝 بالتوفيق في تنظيم الجروب وخدمة الأعضاء ✨\n` +
+            `│\n` +
+            `╰─────────────────────────╯`;
           const picUrl = await getPic();
           if (picUrl) {
             await sock.sendMessage(id, { image: { url: picUrl }, caption: promoteMsg, mentions: [jid] }).catch(async () => {
@@ -242,7 +260,17 @@ export async function startBot() {
 
         // ⬇️ تنبيه التنزيل من الإدارة مع صورة البروفايل
         if (action === 'demote') {
-          const demoteMsg = `⬇️ *تنبيه:* تم تنزيل @${digits} من إدارة جروب *${groupName}* ورجع عضو عادي.`;
+          const demoteMsg =
+            `╭───『 ⬇️ تـنـبـيـه إداري ⬇️ 』───╮\n` +
+            `│\n` +
+            `│ 👤 العضو: @${digits}\n` +
+            `│ 🏰 الجروب: *${groupName}*\n` +
+            `│ 📌 الحالة: تم تنزيله من الإشراف ورجع عضو عادي\n` +
+            `│ ⏰ التوقيت: ${cairoTime} (بتوقيت القاهرة)\n` +
+            `│\n` +
+            `│ 🤍 بنشكرك على كل مجهودك وتعبك السابق في الجروب!\n` +
+            `│\n` +
+            `╰─────────────────────────╯`;
           const picUrl = await getPic();
           if (picUrl) {
             await sock.sendMessage(id, { image: { url: picUrl }, caption: demoteMsg, mentions: [jid] }).catch(async () => {
@@ -256,10 +284,22 @@ export async function startBot() {
 
         // 👋 رسائل الترحيب بصورة البروفايل ومنشن العضو
         if (action === 'add' && s.welcome !== false) {
-          const welcomeTemplate = s.welcomeText || '👋 *أهلاً ومرحباً بك يا* {user} *في جروب* {group}! 🥳✨\nنورتنا وشرفتنا يا غالي، نتمنى لك وقتاً ممتعاً معنا ❤️';
-          const welcomeMsg = welcomeTemplate
-            .replaceAll('{user}', '@' + digits)
-            .replaceAll('{group}', groupName);
+          const defaultWelcome =
+            `╭───『 🌟 أهـلاً ومـرحبـاً بـك 🌟 』───╮\n` +
+            `│\n` +
+            `│ 👤 العضو الجديد: @${digits}\n` +
+            `│ 🏰 الجروب: *${groupName}*\n` +
+            `│ 👥 عدد الأعضاء: ${memberCount} عضو\n` +
+            `│ ⏰ التوقيت: ${cairoTime} (بتوقيت القاهرة)\n` +
+            `│\n` +
+            `│ 🥳 نورت عيلتنا يا غالي وسعداء جداً بانضمامك! ✨\n` +
+            `│ 📜 التزم بالقوانين وخليك محترم وسط إخواتك ❤️\n` +
+            `│ 💬 اكتب .الاوامر لو حابب تكتشف خدمات البوت ⚡\n` +
+            `│\n` +
+            `╰─────────────────────────╯`;
+          const welcomeMsg = s.welcomeText
+            ? s.welcomeText.replaceAll('{user}', '@' + digits).replaceAll('{group}', groupName)
+            : defaultWelcome;
 
           const picUrl = await getPic();
           if (picUrl) {
@@ -274,10 +314,21 @@ export async function startBot() {
 
         // 👋 رسائل المغادرة بصورة البروفايل ومنشن العضو
         if (action === 'remove' && (s.goodbye || s.goodbyeText)) {
-          const goodbyeTemplate = s.goodbyeText || '👋 *مع السلامة يا* {user}، هنفتقدك في جروب *{group}*! 🕊️\nفي رعاية الله وحفظه، بالتوفيق أينما كنت.';
-          const goodbyeMsg = goodbyeTemplate
-            .replaceAll('{user}', '@' + digits)
-            .replaceAll('{group}', groupName);
+          const defaultGoodbye =
+            `╭───『 🕊️ فـي أمـان الـلـه 🕊️ 』───╮\n` +
+            `│\n` +
+            `│ 👤 العضو المغادر: @${digits}\n` +
+            `│ 🏰 الجروب: *${groupName}*\n` +
+            `│ 👥 الأعضاء المتبقين: ${memberCount} عضو\n` +
+            `│ ⏰ التوقيت: ${cairoTime} (بتوقيت القاهرة)\n` +
+            `│\n` +
+            `│ 💔 هنفتقدك يا غالي ونتمنى لك كل التوفيق!\n` +
+            `│ 🚪 باب الجروب مفتوح لك دايماً لو حبيت ترجع 🌸\n` +
+            `│\n` +
+            `╰─────────────────────────╯`;
+          const goodbyeMsg = s.goodbyeText
+            ? s.goodbyeText.replaceAll('{user}', '@' + digits).replaceAll('{group}', groupName)
+            : defaultGoodbye;
 
           const picUrl = await getPic();
           if (picUrl) {

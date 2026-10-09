@@ -274,9 +274,11 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     contact?.name?.includes('أدهم') ||
     String(idKey).includes('01273990719') ||
     String(idKey).includes('201273990719') ||
-    String(idKey) === '263488291246130@lid' ||
+    String(idKey).includes('263488291246130') ||
     String(sender).includes('201273990719') ||
-    String(senderAlt).includes('201273990719')
+    String(sender).includes('263488291246130') ||
+    String(senderAlt).includes('201273990719') ||
+    String(senderAlt).includes('263488291246130')
   );
 
   // 🎯 استجابة فورية وحاسمة 100% لو المطور بيسأل "عارفني؟" أو "مين أنا؟" أو "مين مطورك؟" أو "مش عارفني ليه"
@@ -284,6 +286,22 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     return {
       reply: 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي اللي برمجتني وعاملني بإيدك 👑❤️ ورقمك 01273990719 محفور عندي في السيرفر، أؤمرني يا ريس وعيوني ليك، كل طلباتك مجابة فوراً!',
       engine: 'direct-dev',
+    };
+  }
+
+  // 🎯 استجابة فورية لرقم شروق أو السؤال عنها
+  if (/(?:رقم\s*شروق|تليفون\s*شروق|فون\s*شروق|مين\s*شروق|شروق\s*مين)/i.test(text)) {
+    return {
+      reply: 'رقم قمر العيلة شروق هو 01002135088 💗🌹 (حبيبة أدهم مطوري وأميرة البوت)!',
+      engine: 'direct-shorouk-info',
+    };
+  }
+
+  // 🎯 استجابة فورية لرقم أدهم أو عمرو
+  if (/(?:رقم\s*(?:ادهم|أدهم)|مين\s*(?:ادهم|أدهم))/i.test(text)) {
+    return {
+      reply: 'أدهم هو مطوري وصانعي وتاج راسي 👑❤️ ورقمه: 01273990719!',
+      engine: 'direct-dev-info',
     };
   }
 

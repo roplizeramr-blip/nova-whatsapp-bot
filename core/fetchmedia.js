@@ -76,7 +76,7 @@ function kindOf(type = '', url = '') {
 
 // 🔁 meta refresh في HTML: <meta http-equiv="refresh" content="0; url=...">
 function metaRefresh(html) {
-  const m = html.match(/http-equiv=["']?refresh["']?[^>]*content=["']?[^"']*url=([^"';]+)/i);
+  const m = html.match(/http-equiv=["']?refresh["']?[^>]*content=["'][^"']*url=([^"';]+)/i);
   if (!m) return null;
   // الرابط قد يكون نسبيًا؛ joinUrl يحله نسبةً لعنوان الصفحة الحالية.
   return m[1].trim();
@@ -90,6 +90,26 @@ function joinUrl(base, href) {
   }
 }
 
+export function resolveAccurateMime(buf, rawType = '', kind = '') {
+  if (kind === 'image' || detectKindFromBuffer(buf) === 'image') {
+    if (buf && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+    if (buf && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+    if (buf && buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+    if (/^image\/(jpeg|png|webp|gif)/i.test(rawType)) return rawType.split(';')[0].trim();
+    return 'image/jpeg';
+  }
+  if (kind === 'audio' || detectKindFromBuffer(buf) === 'audio') {
+    if (/^audio\//i.test(rawType)) return rawType.split(';')[0].trim();
+    if (buf && buf.toString('ascii', 0, 4) === 'OggS') return 'audio/ogg; codecs=opus';
+    return 'audio/mpeg';
+  }
+  if (kind === 'video' || detectKindFromBuffer(buf) === 'video') {
+    if (/^video\//i.test(rawType)) return rawType.split(';')[0].trim();
+    return 'video/mp4';
+  }
+  return rawType || 'application/octet-stream';
+}
+
 /**
  * ينزّل الوسائط ويحل التحويلات (HTTP + meta-refresh)
  * @returns {{buffer: Buffer, type: string, kind: string}}
@@ -97,7 +117,8 @@ function joinUrl(base, href) {
 export async function fetchMedia(url, { expect = null, headers = {}, timeout = 25000, maxRedirects = 6 } = {}) {
   if (Buffer.isBuffer(url)) {
     const kind = detectKindFromBuffer(url) || expect || 'image';
-    return { buffer: url, type: kind === 'image' ? 'image/jpeg' : 'application/octet-stream', kind };
+    const cleanType = resolveAccurateMime(url, '', kind);
+    return { buffer: url, type: cleanType, kind };
   }
 
   let current = String(url || '').trim();
@@ -122,7 +143,8 @@ export async function fetchMedia(url, { expect = null, headers = {}, timeout = 2
             let kind = kindOf(type, current) || detectKindFromBuffer(buf);
             if (!kind && expect && /octet-stream|binary/i.test(type)) kind = expect;
             if (kind && (!expect || kind === expect)) {
-              return { buffer: buf, type: type || 'image/jpeg', kind };
+              const cleanType = resolveAccurateMime(buf, type, kind);
+              return { buffer: buf, type: cleanType, kind };
             }
           }
         }
@@ -183,7 +205,8 @@ export async function fetchMedia(url, { expect = null, headers = {}, timeout = 2
       throw new Error('الملف صغير أوي أو فاضي');
     }
 
-    return { buffer: buf, type, kind };
+    const cleanType = resolveAccurateMime(buf, type, kind);
+    return { buffer: buf, type: cleanType, kind };
   }
 
   throw new Error('تحويلات كتير أوي — اللينك مش صالح');

@@ -5,7 +5,7 @@ import { speak } from './tts.js';
 import { imageToUrl, getSettings, isAdmin } from './protection.js';
 import { getMediaSource, uploadBuffer } from './media.js';
 import { requireAdmin, targetOf, listParticipants } from './groupadmin.js';
-import { showSongChoices, saveSongCache } from '../commands/download/song.js';
+import { showSongChoices, showSearchResults, saveSongCache } from '../commands/download/song.js';
 
 // 🎮 استيراد الألعاب والأدوات للتشغيل الذاتي السلس (Autonomous Agent Loop)
 import xoCmd from '../commands/games/xo.js';
@@ -744,8 +744,26 @@ export function detectIntent(rawText, m = null) {
   ) {
     return { type: 'quick_joke' };
   }
+
   // ─────────────────────────────────────────────────────────────
-  // 16. 👥 Conversational Group Management (إدارة وحماية الجروبات التلقائية بالذكاء الاصطناعي)
+  // 16. 💌 Send Private Message Intent (توصيل رسائل للأصدقاء والمطورين)
+  // ─────────────────────────────────────────────────────────────
+  const sendMsgPattern = /^(?:ابعت|ارسل|وصل|قول|كلم)\s+(?:لي\s+|ليا\s+)?(?:رسال[ةه]\s+)?(?:لـ|ل|إلى|الي)\s*([^\s]+)\s+(?:وقوله|وقولها|وقول|إنه|انه|انو|انها|بإن|بان|ان|إن)?\s*(.+)$/i;
+  const sendMsgMatch = rawText.match(sendMsgPattern);
+  if (sendMsgMatch) {
+    const rawTarget = sendMsgMatch[1].trim();
+    const rawContent = sendMsgMatch[2].trim();
+    if (rawTarget && rawContent) {
+      return {
+        type: 'send_private_message',
+        target: rawTarget,
+        message: rawContent,
+      };
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 17. 👥 Conversational Group Management (إدارة وحماية الجروبات التلقائية بالذكاء الاصطناعي)
   // ─────────────────────────────────────────────────────────────
   if (m?.isGroup) {
     // a) ترفيع أدمن: "ارفع ده ادمن", "ارفع ده", "رقيه ادمن", "خليه ادمن", "خليه مشرف", "ارفع دا"
@@ -1240,8 +1258,8 @@ export async function dispatchToolAction(sock, m, text, profile) {
       // حفظ النتائج في كاش الأغاني والمهرجانات
       saveSongCache(m.jid, results);
 
-      // عرض أول نتيجة فوراً مع صورة الغلاف، البيانات، وأزرار الجودة والصيغ (PTT، MP3، مستند، فيديو)
-      await showSongChoices(sock, m.jid, results[0], 0);
+      // عرض قائمة النتائج للاختيار منها كما طلب المستخدم
+      await showSearchResults(sock, m.jid, cleanQuery, results);
     } catch (err) {
       console.error('❌ فشل بحث الأغاني والمهرجانات:', err.message);
       await sendText(sock, m.jid, '🥴 حصل خطأ أثناء البحث عن الأغنية، جرب تاني!');
@@ -1747,6 +1765,54 @@ export async function dispatchToolAction(sock, m, text, profile) {
     return true;
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 💌 Send Private WhatsApp Message (توصيل رسائل للأصدقاء والمطورين)
+  // ─────────────────────────────────────────────────────────────
+  if (intent.type === 'send_private_message') {
+    const rawT = (intent.target || '').trim();
+    const target = rawT.toLowerCase();
+    const msgText = intent.message;
+
+    let targetJid = null;
+    let targetName = rawT;
+
+    if (target.includes('شروق')) {
+      targetJid = '201002135088@s.whatsapp.net';
+      targetName = 'شروق';
+    } else if (target.includes('ادهم') || target.includes('أدهم')) {
+      targetJid = '201273990719@s.whatsapp.net';
+      targetName = 'أدهم';
+    } else if (target.includes('عمرو')) {
+      targetJid = '201044626335@s.whatsapp.net';
+      targetName = 'عمرو';
+    } else {
+      const num = target.replace(/\D/g, '');
+      if (num.length >= 9) {
+        targetJid = `${num.startsWith('2') ? num : '20' + num.replace(/^0+/, '')}@s.whatsapp.net`;
+        targetName = num;
+      }
+    }
+
+    if (!targetJid) {
+      await sendText(sock, m.jid, `🤔 مقدرتش أحدد رقم المستلم "${rawT}" يا كبير. اتأكد من الاسم (شروق، أدهم، عمرو) أو اكتب رقم التليفون!`);
+      return true;
+    }
+
+    const senderName = profile?.name && profile.name !== 'unknown'
+      ? profile.name
+      : (m.sender.includes('263488291246130') || m.sender.includes('201273990719') ? 'أدهم' : 'صديقك');
+    const deliveryMsg = `💌 *رسالة خاصة وصلتك من ${senderName}:*\n\n"${msgText}"\n\n⚡ تم التوصيل بواسطة استرو بـوت`;
+
+    try {
+      await sock.sendMessage(targetJid, { text: deliveryMsg });
+      await sendText(sock, m.jid, `✅ حاضر يا معلم! بعت رسالتك لـ *${targetName}* حالا على الواتساب 💌\n"${msgText}"`);
+    } catch (err) {
+      console.error('❌ فشل إرسال الرسالة الخاصة:', err.message);
+      await sendText(sock, m.jid, `⚠️ حصل خطأ أثناء محاولة إرسال الرسالة لـ ${targetName}، اتأكد إن الرقم صحيح!`);
+    }
+    return true;
+  }
+
   return false;
 }
 
@@ -1827,11 +1893,63 @@ export async function executeAgentTool(sock, m, tool, profile) {
     return true;
   }
 
-  if (name === 'song') {
+  if (name === 'song' || name === 'music') {
     const q = arg1 || '';
     if (q) {
-      await showSongChoices(sock, m.jid, q);
+      try {
+        const results = await api.ytSearch(q, 4);
+        if (results && results.length > 0) {
+          saveSongCache(m.jid, results);
+          await showSearchResults(sock, m.jid, q, results);
+          return true;
+        }
+      } catch (err) {
+        console.error('❌ فشل بحث الأغنية في executeAgentTool:', err.message);
+      }
+      await sendText(sock, m.jid, '🥴 ملقتش نتائج للأغنية دي يا غالي، جرب اسم تاني!');
       return true;
+    }
+  }
+
+  if (name === 'send_message' || name === 'send_msg') {
+    const rawT = (arg1 || '').trim();
+    const target = rawT.toLowerCase();
+    const msgText = arg2 || '';
+    let targetJid = null;
+    let targetName = rawT;
+
+    if (target.includes('شروق')) {
+      targetJid = '201002135088@s.whatsapp.net';
+      targetName = 'شروق';
+    } else if (target.includes('ادهم') || target.includes('أدهم')) {
+      targetJid = '201273990719@s.whatsapp.net';
+      targetName = 'أدهم';
+    } else if (target.includes('عمرو')) {
+      targetJid = '201044626335@s.whatsapp.net';
+      targetName = 'عمرو';
+    } else {
+      const num = target.replace(/\D/g, '');
+      if (num.length >= 9) {
+        targetJid = `${num.startsWith('2') ? num : '20' + num.replace(/^0+/, '')}@s.whatsapp.net`;
+        targetName = num;
+      }
+    }
+
+    if (targetJid && msgText) {
+      const senderName = profile?.name && profile.name !== 'unknown'
+        ? profile.name
+        : (m.sender.includes('263488291246130') || m.sender.includes('201273990719') ? 'أدهم' : 'صديقك');
+      const deliveryMsg = `💌 *رسالة خاصة وصلتك من ${senderName}:*\n\n"${msgText}"\n\n⚡ تم التوصيل بواسطة استرو بـوت`;
+
+      try {
+        await sock.sendMessage(targetJid, { text: deliveryMsg });
+        await sendText(sock, m.jid, `✅ حاضر يا معلم! بعت رسالتك لـ *${targetName}* حالا على الواتساب 💌\n"${msgText}"`);
+        return true;
+      } catch (err) {
+        console.error('❌ فشل إرسال الرسالة الخاصة في executeAgentTool:', err.message);
+        await sendText(sock, m.jid, `⚠️ حصل خطأ أثناء محاولة إرسال الرسالة لـ ${targetName}، اتأكد إن الرقم صحيح!`);
+        return true;
+      }
     }
   }
 

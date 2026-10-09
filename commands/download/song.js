@@ -5,7 +5,7 @@ import api from '../../core/api.js';
 import { db } from '../../core/db.js';
 
 // 🎵 .song — محمّل الأغاني والمهرجانات الذكي المتطور
-// يدعم: ريكورد PTT، ملف MP3، مستند، وفيديو 360/720 مع صور الغلاف والبيانات الكاملة
+// متعدد المراحل: بحث وعرض عدة نتائج → اختيار تراك → كارت التفاصيل وصورة الغلاف → زران (صوت / فيديو) → سلايدر الجودات
 
 function cache() {
   return db.get('searchCache', {});
@@ -19,27 +19,56 @@ export function saveSongCache(jid, results) {
 
 export function loadSongCache(jid) {
   const c = cache()[jid];
-  if (!c || c.type !== 'song' || Date.now() - c.at > 10 * 60 * 1000) return null;
+  if (!c || c.type !== 'song' || Date.now() - c.at > 15 * 60 * 1000) return null;
   return c.results;
 }
 
 /**
- * إرسال كارت تفاصيل التراك وخيارات الجودة المباشرة
+ * 1️⃣ عرض قائمة النتائج المتعددة للاختيار منها
+ */
+export async function showSearchResults(sock, jid, query, results) {
+  const top = results.slice(0, 4);
+  const listText = [
+    `🔍 *نتائج البحث في يوتيوب عن:* "${query.slice(0, 35)}"`,
+    ``,
+    ...top.map((r, i) =>
+      `*${i + 1}️⃣* 🎵 *${r.title}*\n⏱️ *المدة:* ${r.duration || 'غير محدد'} • 👤 *الفنان:* ${r.author || 'يوتيوب'}`
+    ),
+    ``,
+    `👇 *اضغط على زر التراك المطلوب بالأسفل لعرض تفاصيله واختيار التحميل:*`,
+  ].join('\n');
+
+  const buttons = top.slice(0, 3).map((r, i) => ({
+    label: `${i + 1}️⃣ ${String(r.title).slice(0, 18)}`,
+    id: `.song pick-${i}`,
+  }));
+
+  return sendQuickReplies(sock, jid, {
+    title: '🎵 نتائج بحث الأغاني والمهرجانات',
+    text: listText,
+    buttons,
+  });
+}
+
+/**
+ * 2️⃣ إرسال كارت تفاصيل التراك وصورة الغلاف وزري (صوت / فيديو)
  */
 export async function showSongChoices(sock, jid, r, idx = 0) {
   const caption = [
-    `🎵 *${r.title}*`,
+    `🎵 *اسم التراك:* ${r.title}`,
     ``,
     `⏱️ *المدة:* ${r.duration || 'غير محدد'}`,
     `👤 *القناة / الفنان:* ${r.author || 'غير معروف'}`,
     `🔗 *الرابط:* ${r.url}`,
     ``,
-    `اختار الصيغة أو الجودة اللي تناسبك من الأزرار بالأسفل 👇`,
+    `👇 *اختار نوع التحميل المفضل (صوت أو فيديو):*`,
   ].join('\n');
 
-  if (r.thumbnail) {
+  const thumbUrl = r.thumbnail || (r.id ? `https://i.ytimg.com/vi/${r.id}/hqdefault.jpg` : null);
+
+  if (thumbUrl) {
     try {
-      await sendImage(sock, jid, r.thumbnail, caption);
+      await sendImage(sock, jid, thumbUrl, caption);
     } catch {
       await sendText(sock, jid, caption);
     }
@@ -48,59 +77,107 @@ export async function showSongChoices(sock, jid, r, idx = 0) {
   }
 
   const buttons = [
-    { label: '🎙️ ريكورد صوتي PTT', id: `.song dl-${idx}-ptt` },
-    { label: '🎧 ملف صوتي MP3', id: `.song dl-${idx}-audio` },
-    { label: '📁 مستند صوتي Doc', id: `.song dl-${idx}-doc` },
-    { label: '🎬 فيديو 360p', id: `.song dl-${idx}-360` },
-    { label: '🎬 فيديو 720p HD', id: `.song dl-${idx}-720` },
+    { label: '🎧 تحميل صوت (Audio)', id: `.song opt-${idx}-audio` },
+    { label: '🎬 تحميل فيديو (Video)', id: `.song opt-${idx}-video` },
   ];
 
   return sendQuickReplies(sock, jid, {
-    title: '🎵 خيارات التحميل المباشر',
-    text: 'اضغط على الصيغة المطلوبة ليبدأ التحميل فوراً ⚡',
+    title: '⚡ صيغة التحميل',
+    text: 'اضغط على نوع الملف المطلوب لعرض خيارات الجودة المتاحة 👇',
     buttons,
+  });
+}
+
+/**
+ * 3️⃣ عرض سلايدر وخيارات جودة الصوت
+ */
+export async function showAudioQualities(sock, jid, r, idx = 0) {
+  return sendQuickReplies(sock, jid, {
+    title: `🎧 جودات الصوت: ${String(r.title).slice(0, 25)}`,
+    text: 'اختار جودة أو صيغة الصوت المطلوبة 👇',
+    buttons: [
+      { label: '🎙️ ريكورد PTT فويس نوت', id: `.song dl-${idx}-ptt` },
+      { label: '🎧 صوت MP3 عالي (320k)', id: `.song dl-${idx}-audio` },
+      { label: '📁 مستند صوتي Doc', id: `.song dl-${idx}-doc` },
+    ],
+  });
+}
+
+/**
+ * 4️⃣ عرض سلايدر وخيارات جودة الفيديو
+ */
+export async function showVideoQualities(sock, jid, r, idx = 0) {
+  return sendQuickReplies(sock, jid, {
+    title: `🎬 جودات الفيديو: ${String(r.title).slice(0, 25)}`,
+    text: 'اختار جودة الفيديو المناسبة لسرعة باقتك 👇',
+    buttons: [
+      { label: '🎬 فيديو 360p (سريع)', id: `.song dl-${idx}-360` },
+      { label: '🎬 فيديو 720p HD (دقة عالية)', id: `.song dl-${idx}-720` },
+      { label: '🎬 فيديو 1080p FHD (أعلى دقة)', id: `.song dl-${idx}-1080` },
+    ],
   });
 }
 
 export default {
   name: 'song',
-  aliases: ['اغنية', 'أغنية', 'مهرجان', 'تراك', 'شغل', 'تحميل_اغنية'],
-  description: 'تحميل أي أغنية أو مهرجان بصوت عالي النقاء، ريكورد PTT، أو فيديو — .song اسم الأغنية',
+  aliases: ['اغنية', 'أغنية', 'مهرجان', 'تراك', 'شغل', 'تحميل_اغنية', 'اغنيه'],
+  description: 'تحميل أي أغنية أو مهرجان مع نتائج متعددة، كارت بيانات وصورة، وخيارات جودة صوت وفيديو — .song اسم الأغنية',
   usage: '.song عمرو دياب | .song مهرجان اندال',
   async execute(sock, m, args) {
     const text = args.join(' ').trim();
 
-    // اختيار من النتايج المحفوظة: .song dl-<رقم> → أزرار الجودة، وبعدين dl-<رقم>-<صيغة>
-    const pick = /^dl-(\d)(?:-(ptt|audio|doc|360|720))?$/.exec(text);
-    if (pick) {
+    // 1) اختيار نتيجة من قائمة البحث: .song pick-<رقم> أو .song <1-4>
+    const pickMatch = /^(?:pick-(\d)|(\d))$/.exec(text);
+    if (pickMatch) {
+      const idx = Number(pickMatch[1] ?? pickMatch[2]) - (pickMatch[2] ? 1 : 0);
       const results = loadSongCache(m.jid);
-      const idx = Number(pick[1]);
+      const r = results?.[idx];
+      if (!r) return m.reply('⌛ انتهت صلاحية نتائج البحث — ابحث من جديد: `.song اسم الأغنية`');
+      return showSongChoices(sock, m.jid, r, idx);
+    }
+
+    // 2) الضغط على زر نوع التحميل (صوت أو فيديو): .song opt-<رقم>-<audio|video>
+    const optMatch = /^opt-(\d)-(audio|video)$/.exec(text);
+    if (optMatch) {
+      const idx = Number(optMatch[1]);
+      const type = optMatch[2];
+      const results = loadSongCache(m.jid);
+      const r = results?.[idx];
+      if (!r) return m.reply('⌛ انتهت صلاحية نتائج البحث — ابحث من جديد: `.song اسم الأغنية`');
+      if (type === 'audio') return showAudioQualities(sock, m.jid, r, idx);
+      return showVideoQualities(sock, m.jid, r, idx);
+    }
+
+    // 3) التحميل الفعلي بجودة محددة: .song dl-<رقم>-<صيغة>
+    const dlMatch = /^dl-(\d)(?:-(ptt|audio|doc|360|720|1080))?$/.exec(text);
+    if (dlMatch) {
+      const results = loadSongCache(m.jid);
+      const idx = Number(dlMatch[1]);
       const r = results?.[idx];
       if (!r) return m.reply('⌛ انتهت صلاحية نتائج البحث — ابحث من جديد: `.song اسم الأغنية`');
 
-      // أول ضغطة → إرسال كارت الغلاف وأزرار الجودة
-      if (!pick[2]) {
+      // لو تم الضغط بدون تحديد صيغة، نعرض كارت التفاصيل
+      if (!dlMatch[2]) {
         return showSongChoices(sock, m.jid, r, idx);
       }
 
-      const format = pick[2];
-      const isVideo = format === '360' || format === '720';
+      const format = dlMatch[2];
+      const isVideo = format === '360' || format === '720' || format === '1080';
       const isPtt = format === 'ptt';
       const isDoc = format === 'doc';
       const isAudio = !isVideo;
 
       let waitLabel = 'الصوت';
-      if (isPtt) waitLabel = 'الريكورد الصوتي';
-      else if (isDoc) waitLabel = 'المستند الصوتي';
-      else if (isVideo) waitLabel = `الفيديو (${format === '720' ? '720p HD' : '360p'})`;
+      if (isPtt) waitLabel = 'الريكورد الصوتي PTT';
+      else if (isDoc) waitLabel = 'المستند الصوتي Doc';
+      else if (isVideo) waitLabel = `الفيديو (${format === '1080' ? '1080p FHD' : format === '720' ? '720p HD' : '360p'})`;
 
       await sendText(sock, m.jid, `⏳ جاري تحميل ${waitLabel} لأغنية:\n*${r.title}*... ثواني يا فنان! 🚀`);
 
       let buffer;
       try {
-        buffer = await downloadYoutube(r.url, isVideo ? 'video' : 'audio', {
-          height: format === '720' ? 720 : 360,
-        });
+        const height = format === '1080' ? 1080 : format === '720' ? 720 : 360;
+        buffer = await downloadYoutube(r.url, isVideo ? 'video' : 'audio', { height });
       } catch (err) {
         console.warn('⚠️ محاولة يوتيوب فشلت، جاري البحث عبر ساوندكلاود:', err.message?.slice(0, 80));
         if (isAudio) {
@@ -182,27 +259,7 @@ export default {
 
     saveSongCache(m.jid, results);
 
-    // عرض أول نتيجة مباشرة مع كارت التفاصيل والأزرار التفاعلية
-    const topResult = results[0];
-    await showSongChoices(sock, m.jid, topResult, 0);
-
-    // إذا وُجدت نتائج أخرى، نعرض قائمة منسدلة بالاختيارات البديلة
-    if (results.length > 1) {
-      await sendQuickReplies(sock, m.jid, {
-        title: `🎵 نتائج أخرى لـ "${text.slice(0, 25)}"`,
-        text: 'تقدر تختار أي تراك تاني من نتائج البحث 👇',
-        sections: [
-          {
-            title: 'باقي نتائج يوتيوب',
-            rows: results.slice(1).map((r, i) => ({
-              title: `🎵 ${String(r.title).slice(0, 24)}`,
-              description: `${r.duration ?? ''} ${r.author ? '• ' + r.author : ''}`,
-              id: `.song dl-${i + 1}`,
-            })),
-          },
-        ],
-        selectTitle: '🔍 تصفح باقي النتائج',
-      });
-    }
+    // عرض قائمة النتائج للاختيار منها بكل احترافية
+    return showSearchResults(sock, m.jid, text, results);
   },
 };
