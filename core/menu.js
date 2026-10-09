@@ -111,62 +111,35 @@ const BACK = { label: '🔙 القائمة الرئيسية', id: '.menu' };
 
 export const MENU_BANNER_URL = 'https://i.ibb.co/6RrBXZSF/image-1791497647997.png';
 
-// إرسال تفاعلي مرن — أزرار لو مدعومة، مع دعم البانر المصور وبدائل موثوقة 100%
+// إرسال تفاعلي سريع وموثوق 100% للأوامر والقوائم
 async function send(sock, jid, { title, text, buttons = [], sections = [], selectTitle = 'اختر', image = null }) {
   const list = [...buttons].slice(0, 10);
 
-  // 1) محاولة الإرسال كـ كارت تفاعلي ببانر عبر MB.Button
+  // 1) محاولة إرسال الأزرار التفاعلية النقية السريعة
   try {
-    const b = new MB.Button(sock);
-    if (title) b.setTitle(String(title).slice(0, 60));
-    b.setBody(String(text ?? '').slice(0, 4000))
-      .setFooter(footer());
-
-    if (image) {
-      b.setImage(image);
-    }
-
-    if (sections?.length) {
-      b.addSelection(selectTitle);
-      for (const s of sections) {
-        b.makeSection(s.title, s.highlight_label ?? '');
-        for (const r of s.rows) b.makeRow(r.header ?? r.title, r.title, r.description ?? '', r.id);
-      }
-    } else {
-      for (const btn of list) {
-        const label = String(btn.label).slice(0, 40);
-        if (typeof btn.id === 'string' && btn.id.startsWith('copy:')) {
-          b.addCopy(label, btn.id.slice(5));
-        } else {
-          b.addReply(label, btn.id);
-        }
-      }
-    }
-
-    await b.send(jid);
-    return;
+    const { sendQuickReplies } = await import('./send.js');
+    return await sendQuickReplies(sock, jid, {
+      title: title || '⚡ قائمة أوامر بـوت استرو',
+      text,
+      buttons: list,
+      sections: sections?.length ? sections : null,
+      selectTitle,
+    });
   } catch (err) {
-    console.warn('⚠️ تعذر إرسال MB.Button، جاري الإرسال المصور المباشر مع الأزرار:', err.message);
+    console.warn('⚠️ تعذر إرسال أزرار القائمة التفاعلية، إرسال النص المنظم:', err.message);
   }
 
-  // 2) بديل موثوق 100%: إرسال صورة البانر مع النص وأزرار الرد السريع
-  try {
-    const { sendImage, sendQuickReplies } = await import('./send.js');
-    if (image) {
-      await sendImage(sock, jid, image, text);
-      if (list.length) {
-        await sendQuickReplies(sock, jid, {
-          title: title || '⚡ اختيارات سريعة',
-          text: 'اختر القسم أو الإجراء المطلوب 👇',
-          buttons: list,
-        }).catch(() => {});
-      }
-      return;
+  // 2) بديل نصي منسق وفخم 100% يضمن وصول القائمة فورياً
+  let fallback = title ? `╭───「 ${title} 」───╮\n\n` : '';
+  fallback += String(text ?? '');
+  if (list.length) {
+    fallback += '\n\n📂 *الأقسام المتاحة للتنقل السريع:*';
+    for (const btn of list) {
+      fallback += `\n▸ ${btn.label}: \`${btn.id}\``;
     }
-  } catch {}
-
-  // 3) بديل النص العادي لو تعذر كل شيء
-  await sock.sendMessage(jid, { text });
+  }
+  fallback += '\n\n╰─────────────────────────╯';
+  return sock.sendMessage(jid, { text: fallback });
 }
 
 // ═══ المستوى 1: القائمة الرئيسية الفخمة ═══

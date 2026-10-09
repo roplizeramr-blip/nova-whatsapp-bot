@@ -1,8 +1,7 @@
 import api from './api.js';
 import { db } from './db.js';
 import { isOpen, noteEmpty } from './api.js';
-import { chatGroq, groqAnalyze, isGroqReady } from './groq.js';
-import { isAtriaReady, chatAtria, buildAtriaAgentPrompt, extractAgentTools } from './atria.js';
+import { chatGroqPrimary } from './groq-pool.js';
 import { PERSONA_FULL, FEW_SHOTS_FULL, PERSONA_COMPACT, LAYERS, MODES, RELATIONSHIPS, INSULT_DEFENSE, BOT_MOODS } from './persona.js';
 import { analyzeLocally, needsAiAnalysis } from './intent.js';
 import { findContact } from './identity.js';
@@ -235,6 +234,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
   let allowLong = false;
   let mode = 'normal';
   let variants = 0;
+  let image = null;
 
   if (typeof firstArg === 'object' && firstArg !== null && !Array.isArray(firstArg)) {
     text = firstArg.text ?? '';
@@ -247,6 +247,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     allowLong = firstArg.allowLong ?? false;
     mode = firstArg.mode ?? 'normal';
     variants = firstArg.variants ?? 0;
+    image = firstArg.image ?? firstArg.imageBuffer ?? firstArg.imageUrl ?? null;
   } else {
     text = typeof firstArg === 'string' ? firstArg : (firstArg?.toString?.() ?? '');
     const profile = typeof secondArg === 'object' && secondArg !== null ? secondArg : {};
@@ -259,6 +260,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     allowLong = opts.allowLong ?? false;
     mode = opts.mode ?? 'normal';
     variants = opts.variants ?? 0;
+    image = opts.image ?? opts.imageBuffer ?? opts.imageUrl ?? null;
   }
 
   text = String(text || '').trim();
@@ -404,133 +406,38 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
   const isInsult = isInsultText(text) && !contact;
   const roastInstruction = `${PERSONA_COMPACT}\n\n${INSULT_DEFENSE}\n\nالمهم دلوقتي: الرسالة دي إهانة ليك — رد عليه بقهر مصري حاد وسخرية في سطر واحد من غير سباب صريح.`;
 
-  // 1) 🧠 Atria Dawn Preview (744B MoE — 256K Context) — العقل الرئيسي مع استدلال وتفكير عميق مدمج
-  if (isAtriaReady()) {
-    try {
-      const atriaSystem = buildAtriaAgentPrompt({
-        profile,
-        pushName,
-        contact,
-        isDev,
-        mood,
-        text,
-        mode,
-        isVoice: Boolean(voice),
-      });
-
-      const res = await chatAtria({
-        system: isInsult ? roastInstruction : atriaSystem,
-        messages: [...convo, userMsg],
-        maxTokens: allowLong ? 800 : (voice ? 250 : 500),
-        temperature: variants > 0 ? 0.85 : 0.65,
-        timeout: 25000,
-      });
-
-      if (res?.reply) {
-        let clean = polishReply(res.reply, { allowLong });
-        if (isDev && /(?:مش عارفك|لا أعرفك|مين انت|من أنت|لا أستطيع معرفتك)/i.test(clean)) {
-          clean = 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي 👑❤️ أؤمرني يا ريس، كل طلباتك مجابة فوراً!';
-        }
-        if (!isErrorText(clean)) {
-          return {
-            reply: clean,
-            rawReply: res.rawReply,
-            reasoning: res.reasoning,
-            engine: 'atria-dawn',
-            tools: res.tools || [],
-            speedMs: res.speedMs,
-          };
-        }
-      }
-    } catch (err) {
-      console.warn('⚠️ Atria Dawn Preview تعذر أو استغرق وقتاً، جاري التحويل للمزود التالي:', err.message?.slice(0, 80));
-    }
-  }
-
-  // 2) ⚡ Groq qwen3.8-27b — العقل الاحتياطي فائق السرعة (إذا وجد المفتاح)
-  if (isGroqReady()) {
-    const recentBots = (profile.lastMessages ?? []).filter((h) => h.role === 'bot').slice(-3);
-    let first = null;
-    try {
-      const reply = await chatGroq({
-        system: isInsult ? roastInstruction : (retryHint ? fullInstruction + retryHint : fullInstruction),
-        messages: [...convo, userMsg],
-        maxTokens: 260,
-        temperature: variants > 0 ? 0.9 : 0.7,
-        topP: 0.8,
-      });
-      if (reply) {
-        first = polishReply(reply, { allowLong });
-        if (isErrorText(first)) throw new Error('Groq رجّع نص خطأ');
-        if (!isRepetitive(first, recentBots)) return { reply: first, engine: 'groq' };
-        const alt = await chatGroq({
-          system: fullInstruction + '\n⚠️ ردك السابق كان مكرر — جاوب بنبرة مختلفة تماماً.',
-          messages: [...convo, userMsg],
-          maxTokens: 260,
-          temperature: 1.0,
-          topP: 0.95,
-        });
-        if (alt) {
-          const altClean = polishReply(alt, { allowLong });
-          if (!isErrorText(altClean)) return { reply: altClean, engine: 'groq' };
-        }
-        if (!isErrorText(first)) return { reply: first, engine: 'groq' };
-      }
-    } catch (err) {
-      console.warn('⚠️ Groq فشل أو غير متاح، جاري التحويل للمزود التالي:', err.message?.slice(0, 80));
-      if (first && !isErrorText(first)) return { reply: first, engine: 'groq' };
-    }
-  }
-
-  // 2) 💎 VEX Monte AI — محرك فائق السرعة والاستقرار (استجابة في 2 ثانية وشخصية مصرية عبقرية)
+  // 🧠 Groq Brain الموحد (Qwen 3.8-27B) — العقل الرئيسي والوحيد للدردشة والرؤية الفورية مع تدوير المفاتيح
   try {
-    let identityContext = '';
-    if (isDev) {
-      identityContext = `\n👑 [تنبيه فائق الأهمية - هوية المتحدث]: المتحدث هو "أدهم" مطورك وصانعك وتاج راسك اللي برمجك وعاملك بإيده (رقم تليفونه 01273990719)! ناديه "يا أدهم" أو "يا معلم" أو "يا ريس" أو "يا باشا". افتخر بيه وتكلم معاه باحترام وجدعنة وحب، وأي حاجة يطلبها نفذها فوراً واعرف إنه صاحب الفضل عليك!`;
-    } else if (contact?.role === 'حبيبة' || contact?.name?.includes('شروق')) {
-      identityContext = `\n💗 [تنبيه فائق الأهمية - هوية المتحدث]: المتحدثة هي "شروق" حبيبة مطورك أدهم ومطورة البوت! رد عليها بحنان ودلع وسطر شعر وواسيها وافرح معاها.`;
-    } else if (contact) {
-      identityContext = `\n[تنبيه - هوية المتحدث]: المتحدث هو "${contact.name}" (${contact.role}). ${contact.style || ''}`;
-    } else if (profile?.name) {
-      identityContext = `\n[اسم المتحدث]: "${profile.name}".`;
-    }
+    const res = await chatGroqPrimary({
+      system: isInsult ? roastInstruction : fullInstruction,
+      messages: [...convo, userMsg],
+      image,
+      maxTokens: allowLong ? 600 : (voice ? 200 : 380),
+      temperature: variants > 0 ? 0.85 : 0.65,
+      timeout: 15000,
+    });
 
-    const briefStyle = isInsult
-      ? 'أنت استرو، بوت مصري ساخر. رد باستهزاء مصري قاهر ومضحك في جملة واحدة بدون شتائم صريحة.'
-      : 'أنت استرو، صاحب مصري جدع من وسط البلد. جاوب بالمصري العامي باختصار ولطافة وبدون مقدمات طويلة وبدون أن تقول أنا نموذج لغوي أو ذكاء اصطناعي أو تم تطويري بواسطة أي شركة. أنت صاحبهم استرو. ممنوع اختراع أسماء لم تذكر.';
-
-    const recentConvo = convo.slice(-3).map((c) => `${c.role === 'assistant' ? 'استرو' : 'المستخدم'}: ${c.content}`).join('\n');
-    const convoContext = recentConvo ? `\n[سياق المحادثة السابقة]:\n${recentConvo}\n` : '';
-
-    const aiPrompt = `${briefStyle}${identityContext}${convoContext}\n[المستخدم (${contact?.name || (isDev ? 'أدهم المطور' : profile?.name) || 'صاحبي'})]: ${text}`;
-    const monteReply = await api.vexMonte(aiPrompt);
-    if (monteReply?.trim()) {
-      let clean = polishReply(monteReply, { allowLong });
+    if (res?.reply) {
+      let clean = polishReply(res.reply, { allowLong });
       if (isDev && /(?:مش عارفك|لا أعرفك|مين انت|من أنت|لا أستطيع معرفتك)/i.test(clean)) {
-        clean = 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي 👑❤️ أؤمرني يا ريس، كل طلباتك مجابة!';
+        clean = 'أكيد عارفك وحافظك يا أدهم يا معلم! إنت مطوري وصانعي وتاج راسي 👑❤️ أؤمرني يا ريس، كل طلباتك مجابة فوراً!';
       }
-      if (!isErrorText(clean)) return { reply: clean, engine: 'vex-monte' };
+      if (!isErrorText(clean)) {
+        return {
+          reply: clean,
+          rawReply: res.rawReply,
+          tools: res.tools || [],
+          engine: 'groq-' + (res.model || 'qwen'),
+          speedMs: res.speedMs,
+          keyIndex: res.keyIndex,
+        };
+      }
     }
   } catch (err) {
-    console.warn('⚠️ VEX Monte AI تعذر، جاري تجربة المحرك الاحتياطي:', err.message?.slice(0, 80));
+    console.warn('⚠️ [Groq Brain] تعذر استدعاء النموذج:', err.message);
   }
 
-  // 3) 💎 VEX Gemini — احتياطي سريع
-  try {
-    const briefStyle = isInsult
-      ? 'أنت استرو، بوت مصري ساخر. رد باستهزاء مصري قاهر ومضحك في جملة واحدة بدون شتائم صريحة.'
-      : 'أنت استرو، صاحب مصري جدع. جاوب بالمصري العامي باختصار.';
-    const vexPrompt = `${briefStyle}\n[المستخدم]: ${text}`;
-    const vexReply = await api.vexGemini(vexPrompt);
-    if (vexReply?.trim()) {
-      let clean = polishReply(vexReply, { allowLong });
-      if (!isErrorText(clean)) return { reply: clean, engine: 'gemini-vex' };
-    }
-  } catch (err) {
-    console.warn('⚠️ VEX Gemini تعذر:', err.message?.slice(0, 80));
-  }
-
-  // 3) 🛟 خط الأمان الفوري: رد استرو الفوري بشخصيته المصرية الذكية (0 ملي ثانية بدون تأخير)
+  // 🛟 خط الأمان الفوري: رد استرو الفوري بشخصيته المصرية الذكية عند انقطاع الشبكة
   const canned = offlineReply(text, { isInsult, profile, isDev });
   if (canned) return { reply: canned, engine: 'offline' };
 

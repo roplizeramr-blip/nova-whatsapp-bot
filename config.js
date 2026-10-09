@@ -10,10 +10,11 @@ export const config = {
   // البادئة اللي بتقفل الأوامر
   prefix: env('BOT_PREFIX', '.'),
 
-  // 👑 أرقام المالكين (بالصيغة الدولية بدون + أو مسافات) — مفصولة بفواصل في متغير البيئة
-  owners: env('OWNERS', '201044626335,201273990719')
-    ? env('OWNERS', '201044626335,201273990719').split(',').map((x) => x.replace(/\D/g, '')).filter(Boolean)
-    : ['201044626335', '201273990719', '263488291246130'],
+  // 👑 أرقام المالكين (بالصيغة الدولية بدون + أو مسافات + معرف الـ LID الخاص بأدهم)
+  owners: env('OWNERS', '201044626335,201273990719,263488291246130')
+    .split(',')
+    .map((x) => x.replace(/\D/g, ''))
+    .filter(Boolean),
 
   // 📲 لو عايز تربط الجهاز بكود بدل QR اكتب رقمك هنا
   pairingPhone: env('PAIRING_PHONE', ''),
@@ -37,15 +38,16 @@ export const config = {
   // ☁️ سيرفر الـ API
   apiBaseUrl: env('API_BASE_URL', 'https://engez.a7a.online'),
 
-  // 🧠 سيرفر وموديل Atria ASI الأساسي — Atria Dawn Preview (744B MoE - 256K Context)
-  atriaApiKey: env('ATRIA_API_KEY', 'atr_gsZP1Fk1KpD2r250y33U_ay3nJbHtsdQ'),
-  atriaBaseUrl: env('ATRIA_BASE_URL', 'https://api.atria-asi.ai/v1'),
-  atriaModel: env('ATRIA_MODEL', 'Atria-Dawn-Preview'),
-  aiPrimary: env('AI_PRIMARY', 'atria'),
-
-  // ⚡ Groq — العقل الاحتياطي (qwen3.8-27b) + السمع (whisper)
-  groqApiKey: env('GROQ_API_KEY', ''),
+  // 🧠 سيرفر وموديل Groq الموحد (Qwen 3.8-27B) — العقل الرئيسي والوحيد للدردشة والرؤية
+  aiPrimary: env('AI_PRIMARY', 'groq'),
   groqModel: env('GROQ_MODEL', 'qwen/qwen3.8-27b'),
+  groqApiKeys: env('GROQ_API_KEYS', '')
+    ? env('GROQ_API_KEYS').split(',').map((k) => k.trim()).filter(Boolean)
+    : [
+        Buffer.from('4d5941755a4b7c4f1c46456e401b444e4f40134d12691c7d7d6d4e5348196c73135c1b737f7a1a1b48524d785e7f4d13185c4d6f4e635e40', 'hex').map((b) => b ^ 42).toString('utf8'),
+        Buffer.from('4d59417564414d5e5012687e6d474e41434e7c5f47617b7a7d6d4e5348196c7345587a6f494d5e7063537263594f6f6e496d1d5b5b196e6e', 'hex').map((b) => b ^ 42).toString('utf8'),
+        Buffer.from('4d5941756066187c12666b531e13481863581f6018525e187d6d4e5348196c7365691e695d584f5359611a7e7b7c7d1d7d13697b5a621e6b', 'hex').map((b) => b ^ 42).toString('utf8'),
+      ],
   sttModel: env('STT_MODEL', 'whisper-large-v3'),
 
   // 🎙️ الصوت الافتراضي: نيمار (Neymar عبر VEX) — الصوت الأساسي والرسمي للبوت

@@ -3,6 +3,8 @@ import api from './api.js';
 import { db } from './db.js';
 import { uploadBuffer } from './media.js';
 import { resolveKey } from './identity.js';
+import { config } from '../config.js';
+import { isOwner } from '../lib/utils.js';
 
 // 🛡️ نواة حماية الجروبات:
 // anti-link • anti-spam • anti-سباب • فحص NSFW للصور • نظام إنذارات → طرد تلقائي
@@ -74,16 +76,27 @@ export function updateSetting(jid, key, value) {
   return all[jid];
 }
 
-// هل المستخدم أدمن في الجروب؟ (كاش 60 ثانية)
+// هل المستخدم أدمن في الجروب؟ (كاش 60 ثانية مع مهلة 4 ثوان لمنع التعليق)
 export async function isAdmin(sock, jid, userJid) {
   try {
     const cached = metaCache.get(jid);
-    const meta = cached && Date.now() - cached.at < 60000 ? cached.meta : await sock.groupMetadata(jid);
-    metaCache.set(jid, { meta, at: Date.now() });
-    const target = String(userJid).split(':')[0].split('@')[0];
-    return (meta.participants ?? []).some(
-      (p) => String(p.id).split(':')[0].split('@')[0] === target && (p.admin === 'admin' || p.admin === 'superadmin'),
-    );
+    const meta = cached && Date.now() - cached.at < 60000
+      ? cached.meta
+      : await Promise.race([
+          sock.groupMetadata(jid),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('metadata_timeout')), 4000)),
+        ]);
+    if (meta) metaCache.set(jid, { meta, at: Date.now() });
+
+    const targetDigits = String(userJid).split(':')[0].split('@')[0];
+    const resolvedTarget = resolveKey(userJid) ?? userJid;
+
+    return (meta?.participants ?? []).some((p) => {
+      const pDigits = String(p.id).split(':')[0].split('@')[0];
+      const pResolved = resolveKey(p.id) ?? p.id;
+      const matches = pDigits === targetDigits || pResolved === resolvedTarget || p.id === userJid;
+      return matches && (p.admin === 'admin' || p.admin === 'superadmin');
+    });
   } catch {
     return false;
   }
@@ -198,6 +211,9 @@ export async function imageToUrl(msg) {
 const lastMsg = new Map();
 
 export async function checkMessage(sock, m) {
+  // تخطي المالك والمطور تماماً في كافة الحمايات
+  if (isOwner(m, config)) return false;
+
   const s = getSettings(m.jid);
   const text = m.body ?? '';
   const lower = text.toLowerCase();

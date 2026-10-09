@@ -243,21 +243,15 @@ export async function maybeAutoReply(sock, m) {
   // 🗣️ لو في جروب ومفيش منشن أو نداء للبوت ولا أداة مطلوبة → متتدخلش في دردشة الناس
   if (!isAddressedToBot(sock, m)) return;
 
-  // 👁️ رؤية وفهم الصور للمحادثة العامة: صورة مرفقة أو مقتبسة في الخاص أو الجروبات
-  let visionHint = '';
+  // 👁️ رؤية وفهم الصور للمحادثة العامة: صورة مرفقة أو مقتبسة في الخاص أو الجروبات (Groq Vision المباشر)
+  let directImage = null;
   try {
-    const imgUrl = await extractImageUrl(m);
-    if (imgUrl) {
-      const desc = await api.img2prompt(imgUrl).catch(() => null);
-      if (desc?.arabic) {
-        visionHint = `المستخدم بعت لك صورة (أو اقتبس صورة)، وده وصفها بالذكاء الاصطناعي: "${desc.arabic.slice(0, 300)}". وكلامه مع الصورة: "${text}". جاوبه على سؤاله أو تفاعل مع الصورة بذكاء وبالمصري.`;
-      }
-    }
+    directImage = await extractImageUrl(m);
   } catch {}
-  const extra = [awayExtra, visionHint].filter(Boolean).join(' ');
+  const extra = awayExtra;
 
   // ⚡ كاش الردود المتشابهة — نفس السؤال في 10 دقايق = رد فوري (بدون صور)
-  if (!hasImage && !wantsVoice && !isReturnee) {
+  if (!directImage && !hasImage && !wantsVoice && !isReturnee) {
     const caches = db.get('replyCache', {});
     const hit = caches[m.jid]?.[normQ(text)];
     if (hit && Date.now() - hit.at < 600000) {
@@ -286,6 +280,7 @@ export async function maybeAutoReply(sock, m) {
       voice: Boolean(wantsVoice || isVoiceInput),
       extra,
       mode: db.get('modes', {})[m.jid] ?? 'normal',
+      image: directImage,
     });
     reply = typeof res === 'string' ? res : (res?.reply ?? null);
     reasoning = res?.reasoning ?? null;

@@ -125,14 +125,20 @@ export async function handleUpsert(sock, ctx, { messages, type }) {
       console.log(`📩 [${m.isGroup ? 'جروب' : 'خاص'}] رسالة من ${m.pushName || 'مستخدم'} (${m.sender?.split('@')[0]}): "${m.body?.slice(0, 60)}"`);
 
       // 😴 لو البوت مقفول في الشات ده (عدا المالك)
-      if (db.get('botOff', {})[m.jid] && !isOwner(m, config)) continue;
+      if (db.get('botOff', {})[m.jid] && !isOwner(m, config)) {
+        console.log(`😴 تم تخطي الرسالة لأن البوت معطل في الشات (${m.jid})`);
+        continue;
+      }
 
       // 🛡️ حماية الجروبات — لو الرسالة اتحذفت متعالجهاش.
       // fail-open: نظام الحماية لو ضرب error (حذف فاشل، API واقف) ما يوقفش
       // الرسالة كلها — كانت الأوامر كلها في الجروب بتضيع بصمت مع أول عطل.
       if (m.isGroup) {
         try {
-          if (await checkMessage(sock, m)) continue;
+          if (await checkMessage(sock, m)) {
+            console.log(`🛡️ رسالة محجوبة بواسطة نظام الحماية: ${m.sender}`);
+            continue;
+          }
         } catch (err) {
           console.error('⚠️ فحص حماية الجروب فشل — الرسالة هتعدي عادي:', err.message?.slice(0, 80));
         }
@@ -266,6 +272,7 @@ async function routeCommand(sock, m, ctx) {
   cooldowns.set(key, now);
 
   try {
+    console.log(`⚡ [Command] تنفيذ أمر: [${cmd.name}] بواسطة: ${m.pushName || 'مستخدم'} (${m.sender?.split('@')[0]})`);
     await cmd.execute(sock, m, m.args.slice(1), {
       ...ctx,
       startTime: botStartTime,
