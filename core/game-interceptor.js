@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { getSettings } from './protection.js';
 import { normalizeArabic } from './arabic.js';
 
 // استيراد أوامر الألعاب لمعالجة حركات اللاعبين التلقائية بدون بادئة
@@ -28,6 +29,7 @@ const RPS_WORDS = ['حجر', 'ورقة', 'مقص', 'rock', 'paper', 'scissors', 
  */
 export async function interceptGameInput(sock, m) {
   if (!m || !m.body) return false;
+  if (m.isGroup && getSettings(m.jid).games === false) return false;
   const raw = m.body.trim();
   if (!raw) return false;
   const lower = raw.toLowerCase();

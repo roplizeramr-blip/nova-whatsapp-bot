@@ -76,9 +76,11 @@ export function isAddressedToBot(sock, m) {
     return true;
   }
 
-  // 🗣️ وضع الشات الكامل: الجروب اللي مفعّل فيه — استرو يرد على كل حاجة
+  // 🗣️ فحص تعطيل الذكاء الاصطناعي بالكامل في الجروب
   try {
-    if (getSettings(m.jid).aiChatAll && mode !== 'quiet') return true;
+    const s = getSettings(m.jid);
+    if (s.ai === false) return false;
+    if (s.aiChatAll && mode !== 'quiet') return true;
   } catch {}
 
   // 👥 في الجروبات العادية:
@@ -115,6 +117,7 @@ function welcomeBackExtra(profile, awayHours) {
 
 export async function maybeAutoReply(sock, m) {
   if (config.aiChat === false) return;
+  if (m.isGroup && getSettings(m.jid).ai === false) return;
 
   // 🎙️ رسالة صوتية → نسمعها بـ Whisper ونرد صوتيًا (محادثة كاملة بدون كتابة)
   let isVoiceInput = false;

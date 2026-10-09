@@ -1,5 +1,6 @@
 import api from './api.js';
 import { db } from './db.js';
+import { getSettings } from './protection.js';
 import { sendText, sendImage, sendVideo, sendVoice, sendQuickReplies } from './send.js';
 import { extractImageUrl } from './tool-caller.js';
 import xoCmd from '../commands/games/xo.js';
@@ -300,6 +301,23 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
   const name = (toolCall.name || '').toLowerCase();
   const args = toolCall.arguments || {};
   console.log(`🤖 [Agent Tool Executing] -> [${name}] with args:`, JSON.stringify(args));
+
+  // 🎛️ فحص صلاحيات المجموعة لأدوات الإيجنت التلقائية
+  if (m.isGroup) {
+    const s = getSettings(m.jid);
+    if (name === 'play_game' && s.games === false) {
+      await sendText(sock, m.jid, '❌ الألعاب معطلة في هذا الجروب بقرار من المشرفين.');
+      return true;
+    }
+    if ((name === 'download_song' || name === 'search_media') && s.download === false) {
+      await sendText(sock, m.jid, '❌ أوامر التحميل والبحث معطلة في هذا الجروب بقرار من المشرفين.');
+      return true;
+    }
+    if ((name === 'generate_image' || name === 'generate_video') && s.ai === false) {
+      await sendText(sock, m.jid, '❌ التوليد بالذكاء الاصطناعي معطل في هذا الجروب بقرار من المشرفين.');
+      return true;
+    }
+  }
 
   // 1) تشغيل الألعاب التفاعلية
   if (name === 'play_game') {

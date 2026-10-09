@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { sendText } from './send.js';
 import { maybeAutoReply } from './autoreply.js';
-import { checkMessage, getSettings } from './protection.js';
+import { checkMessage, getSettings, isAdmin } from './protection.js';
 import { db } from './db.js';
 import { isOwner } from '../lib/utils.js';
 import { normalizeArabic } from './arabic.js';
@@ -270,6 +270,55 @@ async function routeCommand(sock, m, ctx) {
     return;
   }
   cooldowns.set(key, now);
+
+  // 🎛️ فحص صلاحيات وسيطرة الجروب على الفئات المختلفة (Group Category Permissions)
+  if (m.isGroup) {
+    const s = getSettings(m.jid);
+    const cat = cmd.category || '';
+    const isAd = await isAdmin(sock, m.jid, m.sender);
+    const isOwn = isOwner(m, config);
+
+    // 1) فئة التحميل والوسائط
+    if (cat === 'download' || cat === 'music' || ['song', 'video', 'yt', 'dl', 'tiktok', 'ig', 'fb', 'apk'].includes(cmd.name)) {
+      if (s.download === false) {
+        return m.reply('❌ أوامر التحميل والوسائط مقفولة في هذا الجروب بقرار من المشرفين.');
+      }
+      if (s.download === 'admin' && !isAd && !isOwn) {
+        return m.reply('👑 التحميل في هذا الجروب مخصص للمشرفين فقط.');
+      }
+    }
+
+    // 2) فئة الألعاب والتحديات
+    if (cat === 'games' || ['xo', 'quiz', 'guess', 'math', 'rps', 'truth_dare', 'hang', 'scramble', 'flags', 'duel'].includes(cmd.name)) {
+      if (s.games === false) {
+        return m.reply('❌ الألعاب والتحديات معطلة في هذا الجروب بقرار من المشرفين.');
+      }
+    }
+
+    // 3) فئة الذكاء الاصطناعي
+    if (cat === 'ai' || ['ai', 'chat', 'image', 'think', 'simsimi', 'gpt', 'gemini'].includes(cmd.name)) {
+      if (s.ai === false) {
+        return m.reply('❌ أوامر الذكاء الاصطناعي معطلة في هذا الجروب بقرار من المشرفين.');
+      }
+      if (s.aiAdminOnly && !isAd && !isOwn) {
+        return m.reply('👑 استخدام الذكاء الاصطناعي في هذا الجروب مخصص للمشرفين فقط.');
+      }
+    }
+
+    // 4) فئة الأدوات والخدمات
+    if (cat === 'tools') {
+      if (s.tools === false) {
+        return m.reply('❌ الأدوات والخدمات معطلة في هذا الجروب بقرار من المشرفين.');
+      }
+    }
+
+    // 5) أوامر المنشن الجماعي
+    if (['tagall', 'hidetag'].includes(cmd.name)) {
+      if (s.mentions === false) {
+        return m.reply('❌ أوامر المنشن الجماعي مقفولة في هذا الجروب.');
+      }
+    }
+  }
 
   try {
     console.log(`⚡ [Command] تنفيذ أمر: [${cmd.name}] بواسطة: ${m.pushName || 'مستخدم'} (${m.sender?.split('@')[0]})`);

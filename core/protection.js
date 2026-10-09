@@ -31,8 +31,17 @@ const DEFAULTS = {
   goodbyeText: '',
   // الدومينات المسموحة في antilink (فاضي = أي لينك ممنوع)
   allowLinks: [],
+  antilinkAction: 'warn', // 'delete' مسح فقط | 'warn' إنذار وطرد عند 3 | 'kick' طرد فوري
   // كلمات مخصصة (بتيجي من الداشبورد أو أمر .blacklist)
   badwords: [],
+  // 🎛️ السيطرة على الفئات في الجروب (Group Category Controls)
+  download: true,       // true: مفتوح للجميع | 'admin': للأدمن بس | false: مقفول بالجروب
+  ai: true,             // true: شغال في الجروب | false: معطل تماماً بالجروب
+  aiChatAll: false,     // false: يرد على المنشن والنداء بس | true: يرد على كل رسايل الجروب
+  aiAdminOnly: false,   // false: متاح للجميع | true: للمشرفين فقط
+  games: true,          // true: الألعاب مفتوحة | false: الألعاب مقفولة
+  tools: true,          // true: الأدوات مفتوحة | false: الأدوات مقفولة
+  mentions: true,       // true: منشن الكل متاح للأدمن | false: مقفول تماماً
 };
 
 const BADWORDS = ['كلب', 'حمار', 'غبي', 'احمق', 'أحمق', 'زبالة', 'خرا', 'قذر', 'مناكير'];
@@ -265,7 +274,25 @@ export async function checkMessage(sock, m) {
     });
     if (!allAllowed) {
       await deleteMessage(sock, m.jid, m.msg.key);
-      await warnUser(sock, m.jid, m.sender, 'ممنوع اللينكات هنا 🔗');
+      const action = s.antilinkAction || 'warn';
+      if (action === 'kick') {
+        try {
+          await sock.groupParticipantsUpdate(m.jid, [m.sender], 'remove');
+          await sock.sendMessage(m.jid, {
+            text: `🚪 طردت @${norm(m.sender)} — إرسال روابط ممنوعة في الجروب 🔗`,
+            mentions: [m.sender],
+          }).catch(() => {});
+        } catch {
+          await warnUser(sock, m.jid, m.sender, 'ممنوع اللينكات هنا 🔗 (فشل الطرد لعدم وجود صلاحية أدمن)');
+        }
+      } else if (action === 'delete') {
+        await sock.sendMessage(m.jid, {
+          text: `⚠️ تم مسح رسالة @${norm(m.sender)} — الروابط ممنوعة في هذا الجروب.`,
+          mentions: [m.sender],
+        }).catch(() => {});
+      } else {
+        await warnUser(sock, m.jid, m.sender, 'ممنوع اللينكات هنا 🔗');
+      }
       return true;
     }
   }
