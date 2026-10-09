@@ -1,5 +1,5 @@
 import api from './api.js';
-import { dispatchToolAction, executeAgentTool, extractImageUrl } from './tool-caller.js';
+import { dispatchToolAction, executeAgentTool, resolveSemanticAction, extractImageUrl } from './tool-caller.js';
 import { chatWithAI, cleanForVoice, isErrorText } from './ai.js';
 import { TRIGGERS, TRIGGERS_REGEX } from './persona.js';
 import {
@@ -195,9 +195,13 @@ export async function maybeAutoReply(sock, m) {
     if (canon) key = canon;
   } catch {} // لو فشل الحساب لأي سبب نكمّل بالمفتاح القديم — مفيش رسالة تضيع
 
-  // كولداون 5 ثواني لكل شخص (عشان السبام) — بيتشال لو الرسالة اتعاملت
+  // كولداون لكل شخص (عشان السبام) — المطور معفى تماماً لتجربة سلسة بدون أي تعطيل
+  const isDevUser =
+    String(key).includes('263488291246130') ||
+    String(key).includes('01273990719') ||
+    String(key).includes('201273990719');
   const now = Date.now();
-  if (now - (cooldowns.get(key) ?? 0) < 5000) return;
+  if (!isDevUser && now - (cooldowns.get(key) ?? 0) < 1500) return;
   cooldowns.set(key, now);
 
   // 🧠 تحديث الذاكرة: حساب الغياب الأول (قبل تحديث آخر ظهور) + الاسم + التعلم
@@ -297,16 +301,29 @@ export async function maybeAutoReply(sock, m) {
     }
   }
 
-  // 🛠️ تنفيذ أداة الإيجنت الذكية لو طلبها Atria Dawn Preview
+  // 🧠 ربط النموذج بالتنفيذ (Autonomous Decision Loop):
+  // بعد ما النموذج فكر ورد، لو لم يكتب وسماً صريحاً ولكن كان الطلب واضحاً،
+  // نقوم باستنتاج الإجراء دلالياً وربطه بالتنفيذ فوراً لمنع أي خطأ
+  if (!agentTools || agentTools.length === 0) {
+    const semanticAction = resolveSemanticAction(text, m, reply);
+    if (semanticAction) {
+      agentTools = [semanticAction];
+      console.log(`🎯 [Semantic Resolver] تم استنتاج وربط قرار الأداة من فهم الطلب: ${semanticAction.name}`);
+    }
+  }
+
+  // 🛠️ تنفيذ أداة الإيجنت الذكية المتصلة بالنموذج
   if (agentTools.length > 0) {
     try {
       const executed = await executeAgentTool(sock, m, agentTools[0], profile);
       if (executed) {
         bump('commands');
         awardXp(key, 5);
-        rememberMessage(key, 'bot', `[إيجنت Atria نفذ: ${agentTools[0].name}]`);
-        if (reply && reply.length > 10 && !reply.startsWith('[TOOL:')) {
-          await sendText(sock, m.jid, reply);
+        rememberMessage(key, 'bot', `[إيجنت نفذ: ${agentTools[0].name}]`);
+        if (reply && reply.length > 5 && !reply.startsWith('[') && !reply.startsWith('{')) {
+          if (agentTools[0].name !== 'send_message') {
+            await sendText(sock, m.jid, reply).catch(() => {});
+          }
         }
         chillTick(key);
         return;

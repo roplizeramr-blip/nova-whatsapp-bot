@@ -837,8 +837,15 @@ export function detectIntent(rawText, m = null) {
 export async function dispatchToolAction(sock, m, text, profile) {
   if (!text || typeof text !== 'string') return false;
 
-  const intent = detectIntent(text, m);
-  if (!intent) return false;
+  let intent = detectIntent(text, m);
+  if (!intent) {
+    const semantic = resolveSemanticAction(text, m);
+    if (semantic) {
+      console.log(`🎯 [Tool-Caller] تم استنتاج أداة دلالية: ${semantic.name} للرسالة: "${text.slice(0, 50)}"`);
+      return await executeAgentTool(sock, m, semantic, profile);
+    }
+    return false;
+  }
 
   console.log(`🎯 [Tool-Caller] تم اكتشاف أداة ذكية: ${intent.type} للرسالة: "${text.slice(0, 50)}"`);
 
@@ -1817,19 +1824,23 @@ export async function dispatchToolAction(sock, m, text, profile) {
 }
 
 /**
- * تنفيذ الأدوات التي طلبها الإيجنت الذكي Atria Dawn Preview تلقائياً
+ * تنفيذ الأدوات التي طلبها الإيجنت الذكي Atria أو تم استنتاجها دلالياً
  */
 export async function executeAgentTool(sock, m, tool, profile) {
   if (!tool || !tool.name) return false;
-  const { name, arg1, arg2, arg3 } = tool;
+  const name = String(tool.name).toLowerCase().trim();
+  const params = tool.params || {};
+  const arg1 = params.target || params.prompt || params.query || params.text || tool.arg1 || '';
+  const arg2 = params.message || params.ratio || params.character || tool.arg2 || '';
+  const arg3 = params.extra || tool.arg3 || '';
 
-  if (name === 'image') {
+  if (name === 'image' || name === 'img' || name === 'صورة' || name === 'رسم' || name === 'ارسم') {
     const prompt = arg1 || 'صورة جميلة بالذكاء الاصطناعي';
     await sendText(sock, m.jid, '🎨 حاضر من عيني يا فنان! ببدأ أرسمها بالذكاء الاصطناعي حالا... ⏳');
     try {
       const url = await api.image(prompt);
       if (url) {
-        await sendImage(sock, m.jid, url, `🎨 تم الرسم بالذكاء الاصطناعي بواسطة إيجنت Atria:\n"${prompt}"`);
+        await sendImage(sock, m.jid, url, `🎨 تم الرسم بالذكاء الاصطناعي:\n"${prompt}"`);
         await sendQuickReplies(sock, m.jid, {
           title: '✨ خيارات الصورة',
           text: 'عايز نعمل إيه في الصورة دي؟ 👇',
@@ -1837,7 +1848,7 @@ export async function executeAgentTool(sock, m, tool, profile) {
             { label: '🎬 تحويل لفيديو', id: `.video ${prompt}` },
             { label: '🎨 رسم نسخة تانية', id: `.image ${prompt}` },
           ],
-        });
+        }).catch(() => {});
         return true;
       }
     } catch {}
@@ -1845,7 +1856,7 @@ export async function executeAgentTool(sock, m, tool, profile) {
     return true;
   }
 
-  if (name === 'video') {
+  if (name === 'video' || name === 'فيديو' || name === 'صناعة_فيديو') {
     const prompt = arg1 || 'فيديو جميل بالذكاء الاصطناعي';
     const ratio = arg2 || '16:9';
     await sendText(sock, m.jid, `🎬 أحلى فيديو لعيونك! جاري صناعة الفيديو بأبعاد ${ratio} بالذكاء الاصطناعي... ⏳`);
@@ -1860,7 +1871,7 @@ export async function executeAgentTool(sock, m, tool, profile) {
     return true;
   }
 
-  if (name === 'edit_image') {
+  if (name === 'edit_image' || name === 'edit' || name === 'تعديل_صورة' || name === 'عدل_صورة') {
     const prompt = arg1 || 'تعديل وتجسيد الصورة بالذكاء الاصطناعي';
     const imgUrl = await extractImageUrl(m);
     if (!imgUrl) {
@@ -1893,7 +1904,25 @@ export async function executeAgentTool(sock, m, tool, profile) {
     return true;
   }
 
-  if (name === 'song' || name === 'music') {
+  if (name === 'remove_bg' || name === 'تفريغ' || name === 'شيل_خلفية') {
+    const imgUrl = await extractImageUrl(m);
+    if (!imgUrl) {
+      await sendText(sock, m.jid, '✂️ ابعت الصورة أو رد عليها عشان أفرغهالك فوراً يا فنان!');
+      return true;
+    }
+    await sendText(sock, m.jid, '✂️ ثواني بفرغلك الصورة وبشيل الخلفية... ⏳');
+    try {
+      const transparent = await api.removeBg(imgUrl);
+      if (transparent) {
+        await sendImage(sock, m.jid, transparent, '✂️ تم تفريغ الصورة بنجاح!');
+        return true;
+      }
+    } catch {}
+    await sendText(sock, m.jid, '✂️ معلش حصل ضغط على خدمة تفريغ الصور!');
+    return true;
+  }
+
+  if (name === 'song' || name === 'music' || name === 'اغنية' || name === 'أغنية' || name === 'موسيقى') {
     const q = arg1 || '';
     if (q) {
       try {
@@ -1911,7 +1940,7 @@ export async function executeAgentTool(sock, m, tool, profile) {
     }
   }
 
-  if (name === 'send_message' || name === 'send_msg') {
+  if (name === 'send_message' || name === 'send_msg' || name === 'msg' || name === 'رسالة' || name === 'ارسل_رسالة' || name === 'ابعت_رسالة') {
     const rawT = (arg1 || '').trim();
     const target = rawT.toLowerCase();
     const msgText = arg2 || '';
@@ -1953,7 +1982,7 @@ export async function executeAgentTool(sock, m, tool, profile) {
     }
   }
 
-  if (name === 'apk') {
+  if (name === 'apk' || name === 'تطبيق' || name === 'برنامج') {
     const q = arg1 || '';
     if (q) {
       await sendText(sock, m.jid, '📱 ثواني يا غالي، بجيبلك ملف التطبيق الأصلي من المتجر... ⏳');
@@ -1970,7 +1999,7 @@ export async function executeAgentTool(sock, m, tool, profile) {
     }
   }
 
-  if (name === 'akwam') {
+  if (name === 'akwam' || name === 'فيلم' || name === 'مسلسل') {
     const q = arg1 || '';
     if (q) {
       await sendText(sock, m.jid, '🍿 أحلى سهرة سينمائية لعيونك! بدورلك في أكوام... ⏳');
@@ -1992,8 +2021,8 @@ export async function executeAgentTool(sock, m, tool, profile) {
     }
   }
 
-  if (name === 'voice') {
-    const char = arg1 || 'messi';
+  if (name === 'voice' || name === 'صوت' || name === 'فويس') {
+    const char = arg1 || 'neymar';
     const textToSpeak = arg2 || arg1 || 'أهلاً يا غالي';
     try {
       const audioUrl = await api.vexTts(textToSpeak, char);
@@ -2007,9 +2036,152 @@ export async function executeAgentTool(sock, m, tool, profile) {
   return false;
 }
 
+/**
+ * استنتاج دلالي ذكي وشامل لأي طلب أو نية تنفيذية مهما كانت صيغة كلام المستخدم
+ * يحلل كلام المستخدم ورد النموذج لضمان عدم ضياع أي طلب إطلاقاً
+ */
+export function resolveSemanticAction(rawText, m = null, modelReply = '') {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const clean = cleanUserInput(rawText);
+
+  // 1. توصيل رسائل خاصة (شروق، أدهم، عمرو، أو أرقام تليفون)
+  // يطابق: ابعت لشروق، قول لشروق، كلم شروق، وصل لشروق، رسالة لشروق، شروق ادهم عايزك...
+  if (
+    /(?:ابعت|ارسل|وصل|قول|كلم|بلغ)\s+(?:لي\s+|ليا\s+|منك\s+)?(?:رسال[ةه]\s+)?(?:لـ|ل|إلى|الي|مع)\s*(?:حبيبتي\s+|صاحبي\s+|اخويا\s+|الريس\s+|المعلم\s+)?([^\s]+)\s+(.+)/i.test(clean) ||
+    /(?:ابعت|ارسل|وصل|كلم)\s+(?:شروق|ادهم|أدهم|عمرو)\s+(.+)/i.test(clean) ||
+    /(?:قول|قولي)\s+(?:لـ|ل)?(?:شروق|ادهم|أدهم|عمرو)\s+(.+)/i.test(clean)
+  ) {
+    let target = '';
+    let message = '';
+    if (clean.includes('شروق')) target = 'شروق';
+    else if (clean.includes('ادهم') || clean.includes('أدهم')) target = 'أدهم';
+    else if (clean.includes('عمرو')) target = 'عمرو';
+    else {
+      const match = clean.match(/(?:لـ|ل|إلى|الي)\s*([^\s]+)/i);
+      if (match) target = match[1];
+    }
+
+    if (target) {
+      const targetPos = clean.indexOf(target);
+      const after = clean.slice(targetPos + target.length)
+        .replace(/^(?:\s*(?:وقوليلها|وقولها|وقوله|وقولي|وقول|قوليلها|قولها|قوله|قولي|قول|إنه|انه|انو|انها|بإن|بان|ان|إن|بقولك|بيقولك))\s*(?:لها|له|ليه|ليها)?\s*/i, '')
+        .trim();
+      message = after || clean;
+      return {
+        name: 'send_message',
+        arg1: target,
+        arg2: message,
+        params: { target, message }
+      };
+    }
+  }
+
+  // 2. رسم وتوليد الصور
+  if (/(?:ارسم|ارسم\s*لي|اعمل\s*لي\s*صورة|اعملي\s*صورة|عايز\s*صورة|صورة\s*لـ|توليد\s*صورة|صمم\s*صورة|رسمة\s*لـ)/i.test(clean)) {
+    const prompt = clean.replace(/^(?:يا\s*استرو|يا\s*نوفا|ممكن|لو\s*سمحت|عايزك|عاوزك|بالله\s*عليك)?\s*(?:ارسم\s*لي|ارسم|اعمل\s*لي\s*صورة|اعملي\s*صورة|عايز\s*صورة|صورة\s*لـ|توليد\s*صورة|صمم\s*صورة|رسمة\s*لـ)\s*/i, '').trim();
+    if (prompt && prompt.length >= 2) {
+      return {
+        name: 'image',
+        arg1: prompt,
+        params: { prompt }
+      };
+    }
+  }
+
+  // 3. صناعة وتوليد الفيديو
+  if (/(?:فيديو\s*لـ|اعمل\s*لي\s*فيديو|اعملي\s*فيديو|اصنع\s*فيديو|سوي\s*لي\s*فيديو|عايز\s*فيديو|توليد\s*فيديو)/i.test(clean)) {
+    const isVertical = /(?:طولي|بالطول|ريلز|تيك\s*توك|ستوري|حالة|9:16)/i.test(clean);
+    const ratio = isVertical ? '9:16' : '16:9';
+    const prompt = clean.replace(/^(?:يا\s*استرو|يا\s*نوفا|ممكن|لو\s*سمحت)?\s*(?:فيديو\s*لـ|فيديو|اعمل\s*لي\s*فيديو|اعملي\s*فيديو|اصنع\s*فيديو|سوي\s*لي\s*فيديو|عايز\s*فيديو|توليد\s*فيديو)\s*/i, '')
+      .replace(/(?:طولي|بالطول|ريلز|تيك\s*توك|ستوري|حالة|9:16|16:9|عرضي|بالعرض|للريلز|للستوري)/gi, '').trim();
+    if (prompt && prompt.length >= 2) {
+      return {
+        name: 'video',
+        arg1: prompt,
+        arg2: ratio,
+        params: { prompt, ratio }
+      };
+    }
+  }
+
+  // 4. تشغيل وتحميل أغنية أو مهرجان
+  if (/(?:شغل\s*لي|شغللي|شغل|حمل\s*لي|حمللي|نزل\s*لي|نزللي|عايز\s*اغنية|هات\s*اغنية|اسمع\s*اغنية|مهرجان|اغنية)\s+(.+)/i.test(clean)) {
+    if (!/(?:صورة|فيديو|تطبيق|برنامج|فيلم)/i.test(clean)) {
+      const q = clean.replace(/^(?:يا\s*استرو|يا\s*نوفا|ممكن|لو\s*سمحت)?\s*(?:شغل\s*لي|شغللي|شغل|حمل\s*لي|حمللي|نزل\s*لي|نزللي|عايز\s*اغنية|هات\s*اغنية|اسمع\s*اغنية|مهرجان|اغنية)\s*/i, '')
+        .replace(/^(?:مهرجان|اغنية|أغنية|تراك)\s*/i, '').trim();
+      if (q && q.length >= 2) {
+        return {
+          name: 'song',
+          arg1: q,
+          params: { query: q }
+        };
+      }
+    }
+  }
+
+  // 5. تعديل صورة موجودة (لو المستخدم باعت صورة أو رادد على صورة)
+  if (hasAttachedImage(m) && /(?:عدل|غير|خلي|بدل|ضيف|امسح)/i.test(clean)) {
+    const prompt = clean.replace(/^(?:عدل|عدلي|غير|خلي|بدل)\s*(?:الصورة|دي|الصوره)?\s*/i, '').trim() || 'تعديل الصورة بالذكاء الاصطناعي';
+    return {
+      name: 'edit_image',
+      arg1: prompt,
+      params: { prompt }
+    };
+  }
+
+  // 6. تفريغ وإزالة خلفية الصورة
+  if (hasAttachedImage(m) && /(?:فرغ|شيل\s*الخلفية|ازالة\s*الخلفية|بدون\s*خلفية|تفريغ)/i.test(clean)) {
+    return {
+      name: 'remove_bg',
+      params: {}
+    };
+  }
+
+  // 7. تطبيقات وألعاب APK
+  if (/(?:تطبيق|برنامج|لعبه|لعبة|apk)\s+(.+)/i.test(clean) && /(?:حمل|هات|نزل|عايز|ابحث)/i.test(clean)) {
+    const q = clean.replace(/^(?:حمل|هات|نزل|عايز|ابحث)\s*(?:عن\s*)?(?:تطبيق|برنامج|لعبه|لعبة|apk)\s*/i, '').trim();
+    if (q) {
+      return {
+        name: 'apk',
+        arg1: q,
+        params: { query: q }
+      };
+    }
+  }
+
+  // 8. أفلام ومسلسلات أكوام
+  if (/(?:فيلم|مسلسل|اكوام|أكوام)\s+(.+)/i.test(clean)) {
+    const q = clean.replace(/^(?:عايز|هات|ابحث\s*عن|شغل|حمل)?\s*(?:فيلم|مسلسل|اكوام|أكوام)\s*/i, '').trim();
+    if (q) {
+      return {
+        name: 'akwam',
+        arg1: q,
+        params: { query: q }
+      };
+    }
+  }
+
+  // 9. صوت المشاهير (نيمار، ميسي، غوكو...)
+  if (/(?:بصوت|صوت|اتكلم\s*بصوت|قول\s*بصوت)\s*(نيمار|ميسي|غوكو|رونالدو|ايمينيم|دريك)\s+(.+)/i.test(clean)) {
+    const match = clean.match(/(?:بصوت|صوت|اتكلم\s*بصوت|قول\s*بصوت)\s*(نيمار|ميسي|غوكو|رونالدو|ايمينيم|دريك)\s+(.+)/i);
+    if (match) {
+      const voiceMap = { 'نيمار': 'neymar', 'ميسي': 'messi', 'غوكو': 'goku', 'رونالدو': 'ronaldo', 'ايمينيم': 'eminem', 'دريك': 'drake' };
+      return {
+        name: 'voice',
+        arg1: voiceMap[match[1]] || 'neymar',
+        arg2: match[2].trim(),
+        params: { character: voiceMap[match[1]] || 'neymar', text: match[2].trim() }
+      };
+    }
+  }
+
+  return null;
+}
+
 export default {
   dispatchToolAction,
   executeAgentTool,
+  resolveSemanticAction,
   detectIntent,
   normalizeText,
   cleanUserInput,

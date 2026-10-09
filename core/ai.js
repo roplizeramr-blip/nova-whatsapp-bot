@@ -421,7 +421,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
       const res = await chatAtria({
         system: isInsult ? roastInstruction : atriaSystem,
         messages: [...convo, userMsg],
-        maxTokens: allowLong ? 400 : (voice ? 120 : 160),
+        maxTokens: allowLong ? 800 : (voice ? 250 : 500),
         temperature: variants > 0 ? 0.85 : 0.65,
         timeout: 25000,
       });

@@ -42,33 +42,99 @@ export function atriaStatus() {
 }
 
 /**
- * استخراج أي أدوات تنفيذية طلبها الإيجنت من النص
- * مثل: [TOOL:image|بحر هادئ وقت الغروب] أو [TOOL:video|قطة|9:16]
+ * استخراج أي أدوات تنفيذية طلبها أو قررها الإيجنت من النص
+ * تدعم كافة الصيغ بمرونة تامة:
+ * - [ACTION: send_message | target: شروق | message: ادهم عايزك]
+ * - [DECISION: {"action": "send_message", "target": "شروق", "message": "ادهم عايزك"}]
+ * - [TOOL:image|وصف الصورة]
+ * - كود JSON المباشر { "action": "..." }
  */
 export function extractAgentTools(text) {
   if (!text || typeof text !== 'string') return { cleanText: '', tools: [] };
 
   const tools = [];
-  const toolRegex = /\[TOOL:\s*([a-zA-Z0-9_]+)(?:\s*\|\s*([^\]]*))?\]/gi;
-  let match;
+  let cleanText = text;
 
-  while ((match = toolRegex.exec(text)) !== null) {
-    const name = match[1].toLowerCase().trim();
-    const rawArgs = (match[2] || '').trim();
-    const args = rawArgs.split('|').map((a) => a.trim()).filter(Boolean);
-
-    tools.push({
-      raw: match[0],
-      name,
-      args,
-      arg1: args[0] || '',
-      arg2: args[1] || '',
-      arg3: args[2] || '',
-    });
+  // 1) فحص وسوم JSON مثل: [DECISION: {"action": "send_message", "target": "شروق", "message": "ادهم عايزك"}]
+  const jsonTagRegex = /\[(?:DECISION|ACTION|TOOL|أداة|قرار):\s*(\{[\s\S]*?\})\]/gi;
+  let jsonMatch;
+  while ((jsonMatch = jsonTagRegex.exec(cleanText)) !== null) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]);
+      const act = (parsed.action || parsed.tool || parsed.name || '').toLowerCase().trim();
+      if (act && act !== 'none' && act !== 'chat') {
+        tools.push({
+          raw: jsonMatch[0],
+          name: act,
+          arg1: parsed.arg1 || parsed.target || parsed.prompt || parsed.query || parsed.text || '',
+          arg2: parsed.arg2 || parsed.message || parsed.ratio || parsed.character || '',
+          arg3: parsed.arg3 || '',
+          params: parsed,
+        });
+      }
+    } catch {}
   }
+  cleanText = cleanText.replace(jsonTagRegex, '');
 
-  // تنظيف النص المعروض للمستخدم من وسوم الأدوات
-  let cleanText = text.replace(toolRegex, '').trim();
+  // 2) فحص وسوم [ACTION: ...] أو [TOOL: ...] أو [قرار: ...] بنظام pipe (|)
+  const tagRegex = /\[(?:TOOL|ACTION|DECISION|أداة|قرار):\s*([a-zA-Z0-9_\u0600-\u06FF]+)(?:\s*\|\s*([^\]]*))?\]/gi;
+  let tagMatch;
+  while ((tagMatch = tagRegex.exec(cleanText)) !== null) {
+    const rawName = tagMatch[1].trim();
+    const rawArgs = (tagMatch[2] || '').trim();
+    const name = rawName.toLowerCase();
+
+    if (name && name !== 'none' && name !== 'chat') {
+      const splitArgs = rawArgs.split('|').map((a) => a.trim()).filter(Boolean);
+      const params = {};
+      const posArgs = [];
+
+      for (const piece of splitArgs) {
+        const colonIdx = piece.indexOf(':');
+        if (colonIdx > 0 && colonIdx < 20) {
+          const k = piece.slice(0, colonIdx).trim().toLowerCase();
+          const v = piece.slice(colonIdx + 1).trim();
+          params[k] = v;
+        } else {
+          posArgs.push(piece);
+        }
+      }
+
+      tools.push({
+        raw: tagMatch[0],
+        name,
+        args: posArgs,
+        arg1: params.target || params.prompt || params.query || params.text || posArgs[0] || '',
+        arg2: params.message || params.ratio || params.character || posArgs[1] || '',
+        arg3: params.extra || posArgs[2] || '',
+        params,
+      });
+    }
+  }
+  cleanText = cleanText.replace(tagRegex, '');
+
+  // 3) فحص بلوكات JSON المستقلة التي قد يخرجها النموذج
+  const codeBlockJsonRegex = /```(?:json)?\s*(\{[\s\S]*?"(?:action|tool)"[\s\S]*?\})\s*```/gi;
+  let cbMatch;
+  while ((cbMatch = codeBlockJsonRegex.exec(cleanText)) !== null) {
+    try {
+      const parsed = JSON.parse(cbMatch[1]);
+      const act = (parsed.action || parsed.tool || parsed.name || '').toLowerCase().trim();
+      if (act && act !== 'none' && act !== 'chat') {
+        tools.push({
+          raw: cbMatch[0],
+          name: act,
+          arg1: parsed.arg1 || parsed.target || parsed.prompt || parsed.query || parsed.text || '',
+          arg2: parsed.arg2 || parsed.message || parsed.ratio || parsed.character || '',
+          arg3: parsed.arg3 || '',
+          params: parsed,
+        });
+      }
+    } catch {}
+  }
+  cleanText = cleanText.replace(codeBlockJsonRegex, '');
+
+  // تنظيف النص المعروض للمستخدم
   cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim();
 
   return { cleanText, tools };
@@ -143,32 +209,37 @@ export function buildAtriaAgentPrompt({
 - **متحمس**: شجعه بحماس عالي وشاركه الطاقة الإيجابية.
 - **بيهزر**: رد بإفيهات الشارع والقهوة المصرية وخفة دم حقيقية.`);
 
-  // 7) قدرات الإيجنت الذاتي والأدوات التفاعلية (Agent Tool Manifest)
-  parts.push(`\n## 🛠️ أدواتك وقدراتك كـ Autonomous Agent:
-أنت لست مجرد شات، أنت إيجنت متكامل يقدر ينفذ أوامر وأدوات. عندما يطلب المستخدم منك إجراءً، يمكنك إضافة وسم الأداة في بداية أو نهاية ردك لتقوم المنظومة بتنفيذه تلقائياً:
-1. **توليد صورة**: لو طلب رسم صورة، ضع: \`[TOOL:image|وصف الصورة مفصل ودقيق]\`
-2. **صناعة فيديو**: لو طلب عمل فيديو، ضع: \`[TOOL:video|وصف المشهد|النسبة (16:9 أو 9:16)]\`
-3. **تعديل صورة**: لو طلب تعديل صورة موجودة، ضع: \`[TOOL:edit_image|التعديل المطلوب]\`
-4. **تفريغ صورة**: لو طلب إزالة الخلفية، ضع: \`[TOOL:remove_bg]\`
-5. **أغنية وموسيقى**: لو طلب أغنية أو تراك، ضع: \`[TOOL:song|اسم الأغنية أو الفنان]\`
-6. **تطبيقات APK**: لو طلب تطبيق أو لعبة أندرويد، ضع: \`[TOOL:apk|اسم التطبيق]\`
-7. **أفلام ومسلسلات أكوام**: لو سأل عن فيلم أو مسلسل، ضع: \`[TOOL:akwam|اسم الفيلم أو المسلسل]\`
-8. **صوت المشاهير (TTS)**: لو طلب أن تنطق بصوت (نيمار، ميسي، غوكو، رونالدو، إيمينيم، دريك)، ضع: \`[TOOL:voice|الشخصية|النص المراد نطقه]\`
-9. **الألعاب**: لو طلب لعب (xo, quiz, math, flags, scramble)، ضع: \`[TOOL:game|نوع اللعبة]\`
-10. **استيكر**: لو طلب تحويل صورة لاستيكر، ضع: \`[TOOL:sticker]\`
-11. **توصيل رسائل واتساب خاصة للأصدقاء والمطورين**: لو طلب منك تبعت رسالة لحد (زي شروق، أدهم، عمرو، أو رقم تليفون)، ضع: \`[TOOL:send_msg|المستلم|الرسالة]\`
+  // 7) منهجية التفكير وقرارات الإيجنت التنفيذية المرنة
+  parts.push(`\n## 🧠 منهجية التفكير والتنفيذ الذاتي (Agent Autonomous Decision Loop):
+أنت Astro — إيجنت ذكي خارق ومساعد تنفيذي حقيقي متصل مباشرة بمحركات الواتساب وسيرفر البوت!
+المستخدم قد يطلب منك أي إجراء بأي صيغة كلام (عامية مصرية، تلميح، استعجال، كلام عفوي):
+1. **فكر داخلياً**: افهم مقصد المستخدم الحقيقي بدقة: هل هو يدردش ويفضفض معك؟ أم يريد منك تنفيذ طلب أو إجراء عملي؟
+2. **اتخذ القرار التنفيذي فوراً**: إذا كان يطلب أي إجراء، حدد قرارك في أول سطر من ردك بأي صيغة تفضلها (النظام متصل بك ويفهم كافة الصيغ تلقائياً):
+   - \`[ACTION: send_message | target: المستلم | message: نص الرسالة]\`
+   - \`[ACTION: image | prompt: وصف الصورة بدقة]\`
+   - \`[ACTION: video | prompt: وصف المشهد | ratio: 16:9 أو 9:16]\`
+   - \`[ACTION: edit_image | prompt: التعديل المطلوب]\`
+   - \`[ACTION: song | query: اسم الأغنية أو المطرب]\`
+   - \`[ACTION: apk | query: اسم التطبيق أو اللعبة]\`
+   - \`[ACTION: akwam | query: اسم الفيلم أو المسلسل]\`
+   - \`[ACTION: voice | character: نيمار/ميسي/غوكو | text: الكلام المراد نطقه]\`
+   - \`[ACTION: remove_bg]\`
+   - \`[ACTION: sticker]\`
+   - \`[ACTION: none]\` (إذا كان مجرد شات ودردشة عادية)
+   (أو يمكنك كتابة القرار بصيغة JSON مثل: \`[DECISION: {"action": "send_message", "target": "شروق", "message": "ادهم عايزك"}]\` أو صيغة \`[TOOL:name|arg1|arg2]\`).
+3. **الرد البشري الدافئ**: بعد سطر القرار، اكتب ردك الطبيعي والجميل والمختصر للشات كصديق وفيّ ومساعد شهم!
 
 ## ⛔ تعليمات صارمة وممنوعات قطعية (Crucial Directives):
 - **ممنوع نهائياً وبأي شكل من الأشكال** أن تقول للمستخدم: "مش بعرف اعملها" أو "مش هقدر أعمل كدة" أو "أنا نموذج لغوي فقط لا أملك صلاحية" أو "لا يمكنني إرسال رسائل" أو "معنديش إمكانية" أو "مش عارف"!
 - أنت **Autonomous Agent متكامل** ولديك أدوات وصلاحيات تنفيذية على الواتساب وخدمات خارجية وميديا وصوت وتوصيل رسائل!
-- لو طُلب منك طلب تملك له أداة (توليد صور، فيديو، تعديل، أغاني، فويس، إرسال رسالة لشروق أو أدهم، تحميل، ألعاب، أدمن جروب)، نفّذه فوراً باستخدام الأداة المناسبة \`[TOOL:...]\` ورحّب بالطلب بحماس.
+- لو طُلب منك طلب تملك له أداة (توصيل رسائل، توليد صور، فيديو، تعديل، أغاني، فويس، تحميل، ألعاب، أدمن جروب)، حدد القرار فوراً ونفّذه ورحّب بالطلب بحماس.
 - إذا سُئلت عن معلومات العائلة والمطورين:
   * أدهم هو مطورك وصانعك وحبيبك (01273990719).
   * شروق هي حبيبة أدهم ومطورة البوت (رقمها: 01002135088). لو حد سألك "رقم شروق كام" أو "رقم حبيبة أدهم كام" جاوب فوراً بحب: "رقم قمر العيلة شروق هو 01002135088 💗".
   * عمرو هو المطور وصديق أدهم (01044626335).
-- لو طُلب منك توصيل رسالة لشروق أو أدهم (مثل "ابعت رسالة لشروق قوله ادهم عايزك" أو "كلم شروق"): استخدم فوراً \`[TOOL:send_msg|شروق|ادهم عايزك]\` وقول في ردك: "حاضر من عيوني بعت رسالتك لشروق حالا 💌".
+- لو طُلب منك توصيل رسالة لشروق أو أدهم (مثل "ابعت رسالة لشروق قوله ادهم عايزك" أو "كلم شروق"): حدد فوراً \`[ACTION: send_message | target: شروق | message: ادهم عايزك]\` وقول في ردك: "حاضر من عيوني بعت رسالتك لشروق حالا 💌".
 
-*ملاحظة هامة*: إذا كان السؤال دردشة عادية أو استفساراً عاماً أو كود أو رياضيات، أجب مباشرة كصديقك استرو دون استخدام وسوم الأدوات.`);
+*ملاحظة هامة*: إذا كان السؤال دردشة عادية أو استفساراً عاماً أو كود أو رياضيات، أجب مباشرة كصديقك استرو دون استخدام وسوم الإجراءات.`);
 
   // 8) معلومات المستخدم من الذاكرة
   if (profile?.name && profile.name !== 'unknown') {
