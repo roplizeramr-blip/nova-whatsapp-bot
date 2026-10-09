@@ -16,6 +16,7 @@ import {
   importSessionDump,
 } from './postgres.js';
 import { chatWithAI } from './ai.js';
+import { CALL_PAGE, initLiveCallWs } from './live-call-server.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SESSION_DIR = join(__dirname, '..', 'session');
@@ -408,6 +409,13 @@ export function startQrServer(port = 3000) {
         return;
       }
 
+      // 📞 غرفة المكالمة الصوتية الحية عبر Gemini 3.8 Live
+      if (req.url === '/call' || req.url === '/live' || req.url === '/voice') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(CALL_PAGE);
+        return;
+      }
+
       // 🔐 حماية الإحصائيات بكلمة سر لو تم تحديد DASH_TOKEN
       if (config.dashToken && req.url.startsWith('/stats')) {
         const url = new URL(req.url, 'http://x');
@@ -557,8 +565,18 @@ export function startQrServer(port = 3000) {
   server.on('error', (err) => {
     console.error('❌ سيرفر الداشبورد فشل:', err.message);
   });
+
+  // 🎙️ تفعيل خادم المكالمات الصوتية الحية (Live Voice Calling WebSockets)
+  try {
+    initLiveCallWs(server);
+    console.log('🎙️ محرك المكالمات الصوتية الحية (Gemini 3.8 Live WS) نشط على /ws/live-call');
+  } catch (err) {
+    console.warn('⚠️ تعذر بدء محرك المكالمات الحية على السيرفر:', err.message);
+  }
+
   server.listen(port, host, () => {
     console.log(`🌐 لوحة التحكم المتطورة: http://0.0.0.0:${port}`);
+    console.log(`📞 غرفة المكالمة الصوتية الحية: http://0.0.0.0:${port}/call`);
   });
   return server;
 }

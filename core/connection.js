@@ -23,6 +23,7 @@ import { setGroupsProvider, setApiStatus, setConnected } from './stats.js';
 import { db } from './db.js';
 import { QR_FILE } from './qr-server.js';
 import api, { setOwnerNotifier, onApiStatus } from './api.js';
+import { initCallEngine } from './call-engine.js';
 import {
   restoreSessionFromDb,
   scheduleSessionSync,
@@ -102,6 +103,9 @@ export async function startBot() {
   });
   sock.ev.on('connection.update', (update) => onConnectionUpdate(sock, update));
   sock.ev.on('messages.upsert', (upsert) => handleUpsert(sock, { commands, categories }, upsert));
+
+  // 📞 تفعيل محرك مراقبة واستقبال المكالمات الصوتية الحية (Gemini 3.8 Live VoIP Engine)
+  initCallEngine(sock);
 
   // 🆔 هوية البوت نفسه — عشان متتخلطش بذاكرة الناس + 🧹 الصيانة الدورية
   setBotIdentity(sock);
