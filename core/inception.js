@@ -26,7 +26,7 @@ export async function chatInceptionPrimary({
   tools = null,
   model = config.inceptionModel || 'mercury-2.5',
   reasoningEffort = config.inceptionReasoning || 'medium',
-  maxTokens = 800,
+  maxTokens = 2500,
   temperature = 0.7,
   timeout = 30000,
 } = {}) {

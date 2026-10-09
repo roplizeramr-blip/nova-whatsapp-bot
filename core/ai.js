@@ -210,6 +210,10 @@ export function polishReply(reply, { allowLong = false } = {}) {
        .replace(/\n*[*_]*حابب أقولك كمان إني بقدر أولد لك صور[\s\S]*$/i, '')
        .replace(/\n*[*_]*للتذكير:\s*إذا كنت ترغب في توليد صورة[\s\S]*$/i, '');
 
+  // تصفية أية وسوم إيجنت أو أدوات داخلية قد تخرج سهواً
+  t = t.replace(/\[(?:TOOL|ACTION|DECISION|إيجنت|أداة|قرار)[^\]]*\]/gi, '');
+  t = t.replace(/\[إيجنت\s*نفذ:[^\]]*\]/gi, '');
+
   t = t.replace(/\n{3,}/g, '\n\n').trim();
 
   if (!allowLong && t.length > MAX_CHARS && !/[.…]$/.test(t)) {
@@ -386,13 +390,13 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
 
   // 🧠 تاريخ المحادثة الحقيقي — النموذج يشوف الكلام كأنه محادثة، مش سطور
   const history = (profile?.lastMessages ?? []).slice(-6);
-  // بنشيل بس الرسالة الحالية نفسها (اتذكرت قبل النداء) — startsWith كانت
-  // بتشيل كلام قديم يبدأ بنفس الكلمات ("ازيك" بتقطع "ازيك يا معلم")
+  // بنشيل بس الرسالة الحالية نفسها وأي وسوم إيجنت داخلية قديمة
   const convo = history
-    .filter((h) => h?.text && String(h.text).trim() !== text)
+    .filter((h) => h?.text && String(h.text).trim() !== text && !String(h.text).includes('إيجنت نفذ') && !String(h.text).startsWith('['))
     .map((h) => ({ role: h.role === 'bot' ? 'assistant' : 'user', content: String(h.text || '').slice(0, 300) }));
 
-  const userMsg = { role: 'user', content: (text || 'أهلاً').slice(0, 500) };
+  const imageNote = image ? '\n[ملاحظة: المستخدم قام بإرفاق صورة في هذه الرسالة أو قام بالرد على صورة في الشات]' : '';
+  const userMsg = { role: 'user', content: ((text || 'أهلاً') + imageNote).slice(0, 700) };
   // البديل بتاع منع التكرار
   const retryHint = variants > 0
     ? `\n⚠️ الرد اللي قبله كان مكرر — جاوب بنبرة مختلفة تماماً وابدأ بكلمة مختلفة خالص.`
@@ -418,21 +422,27 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
   const isInsult = isInsultText(text) && !contact;
   const roastInstruction = `${PERSONA_COMPACT}\n\n${INSULT_DEFENSE}\n\nالمهم دلوقتي: الرسالة دي إهانة ليك — رد عليه بقهر مصري حاد وسخرية في سطر واحد من غير سباب صريح.`;
 
-  // 🧠 1) في حال وجود صورة مرفقة: التحويل المباشر لـ Groq Vision للتحليل البصري
-  if (image) {
+  // هل الرسالة طلب إجراء/أداة على صورة؟ (تعديل، تفريغ، رسم، تحويل لفيديو، أو أوامر عامة)
+  const isImageAction = Boolean(
+    image && /(?:عدل|تعديل|غير|بدل|شيل|فرغ|احذف|فيديو|ارسم|لعبة|اغنية|مهرجان|ارفع|طرد|ادمن|edit|modify|remove\s*bg|bg)/i.test(text)
+  );
+
+  // 🧠 1) في حال وجود صورة مرفقة واستفسار بصري: التحويل لـ Groq Vision بالتعليمات المدمجة لتفادي 429
+  if (image && !isImageAction) {
     try {
       const res = await chatGroqPrimary({
-        system: isInsult ? roastInstruction : fullInstruction,
+        system: isInsult ? roastInstruction : compactInstruction,
         messages: [...convo, userMsg],
         image,
-        maxTokens: allowLong ? 600 : (voice ? 200 : 380),
+        tools: AGENT_TOOLS_SPEC,
+        maxTokens: allowLong ? 400 : (voice ? 180 : 300),
         temperature: variants > 0 ? 0.85 : 0.65,
         timeout: 15000,
       });
 
-      if (res?.reply) {
-        let clean = polishReply(res.reply, { allowLong });
-        if (!isErrorText(clean)) {
+      if (res?.reply || (res?.tools && res.tools.length > 0)) {
+        let clean = polishReply(res.reply || '', { allowLong });
+        if (!isErrorText(clean) || (res.tools && res.tools.length > 0)) {
           return {
             reply: clean,
             rawReply: res.rawReply,
@@ -454,7 +464,7 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
       system: isInsult ? roastInstruction : fullInstruction,
       messages: [...convo, userMsg],
       tools: AGENT_TOOLS_SPEC,
-      maxTokens: allowLong ? 900 : (voice ? 250 : 700),
+      maxTokens: allowLong ? 2500 : (voice ? 1500 : 2500),
       temperature: variants > 0 ? 0.85 : 0.65,
       timeout: 30000,
     });
@@ -482,13 +492,13 @@ export async function chatWithAI(firstArg, secondArg, thirdArg) {
     console.warn('⚠️ [Inception Brain] خطأ في الاستدعاء، جاري التحويل الفوري لـ Groq:', err.message, err.response?.data);
   }
 
-  // 🧠 3) العقل البديل الفوري: Groq Key Pool (Qwen 3.8-27B) مع تدوير المفاتيح الثلاثة
+  // 🧠 3) العقل البديل الفوري: Groq Key Pool (Qwen 3.8-27B) مع تدوير المفاتيح والتعليمات المدمجة لتفادي 429
   try {
     const res = await chatGroqPrimary({
-      system: isInsult ? roastInstruction : fullInstruction,
+      system: isInsult ? roastInstruction : compactInstruction,
       messages: [...convo, userMsg],
       tools: AGENT_TOOLS_SPEC,
-      maxTokens: allowLong ? 600 : (voice ? 200 : 380),
+      maxTokens: allowLong ? 450 : (voice ? 180 : 320),
       temperature: variants > 0 ? 0.85 : 0.65,
       timeout: 15000,
     });

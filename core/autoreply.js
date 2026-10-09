@@ -293,8 +293,8 @@ export async function maybeAutoReply(sock, m) {
       if (executed) {
         bump('commands');
         awardXp(key, 5);
-        rememberMessage(key, 'bot', `[إيجنت نفذ: ${agentTools[0].name}]`);
-        if (reply && reply.length > 5 && !reply.startsWith('[') && !reply.startsWith('{')) {
+        if (reply && reply.length > 5 && !reply.startsWith('[') && !reply.startsWith('{') && !reply.includes('إيجنت نفذ')) {
+          rememberMessage(key, 'bot', reply);
           if (agentTools[0].name !== 'send_message') {
             await sendText(sock, m.jid, reply).catch(() => {});
           }

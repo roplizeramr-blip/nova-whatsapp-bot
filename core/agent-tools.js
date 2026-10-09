@@ -186,6 +186,28 @@ export const AGENT_TOOLS_SPEC = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'group_action',
+      description: 'تنفيذ أوامر إدارة ومشرفي الجروب في واتساب مثل: ترقية عضو لمشرف/أدمن (promote)، تنزيل مشرف لعضو عادي (demote)، أو طرد عضو من الجروب (kick). استدعِ هذه الأداة فوراً عندما يطلب المستخدم في الجروب: "ارفع ده مشرف", "رقي ده", "خليه ادمن", "نزله من الاشراف", "شيل الادمن", "اطرد ده", "طرد", "خرجه بره".',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['promote', 'demote', 'kick'],
+            description: 'نوع الإجراء الإداري المطلوب',
+          },
+          target: {
+            type: 'string',
+            description: 'رقم أو منشن العضو المستهدف (اختياري)',
+          },
+        },
+        required: ['action'],
+      },
+    },
+  },
 ];
 
 /**
@@ -404,6 +426,68 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
       await sectionMenu(sock, m.jid, section);
     } else {
       await mainMenu(sock, m.jid);
+    }
+    return true;
+  }
+
+  // 10) إدارة الجروب (ترقية / تنزيل / طرد)
+  if (name === 'group_action') {
+    if (!m.isGroup) {
+      await sendText(sock, m.jid, '👥 الأوامر دي بتتنفذ جوه الجروبات بس يا صاحبي!');
+      return true;
+    }
+    const action = String(args.action || 'promote').toLowerCase();
+    const info = m.message?.extendedTextMessage?.contextInfo;
+    const target = (args.target && String(args.target).includes('@'))
+      ? String(args.target).trim()
+      : (info?.mentionedJid?.[0] ?? info?.participant ?? null);
+
+    if (!target) {
+      await sendText(sock, m.jid, '⚠️ منشن الشخص أو اعمل رد على رسالته عشان أعرف أنفذ عليه الإجراء!');
+      return true;
+    }
+
+    const { isAdmin } = await import('./protection.js');
+    const { isOwner } = await import('../lib/utils.js');
+    const { config } = await import('../config.js');
+
+    const isSenderAdmin = (await isAdmin(sock, m.jid, m.sender)) || isOwner(m, config);
+    if (!isSenderAdmin) {
+      await sendText(sock, m.jid, '🔐 الأمر ده مخصص لأدمن الجروب فقط يا غالي.');
+      return true;
+    }
+
+    const targetMention = '@' + String(target).split('@')[0];
+
+    try {
+      if (action === 'promote') {
+        await sock.groupParticipantsUpdate(m.jid, [target], 'promote');
+        await sock.sendMessage(m.jid, {
+          text: `👑 تم ترقية ${targetMention} لمشرف الجروب بنجاح! 🎉`,
+          mentions: [target],
+        });
+        return true;
+      }
+      if (action === 'demote') {
+        await sock.groupParticipantsUpdate(m.jid, [target], 'demote');
+        await sock.sendMessage(m.jid, {
+          text: `⬇️ تم تنزيل ${targetMention} من الإشراف.`,
+          mentions: [target],
+        });
+        return true;
+      }
+      if (action === 'kick') {
+        await sock.groupParticipantsUpdate(m.jid, [target], 'remove');
+        await sock.sendMessage(m.jid, {
+          text: `🦶 تم طرد ${targetMention} من الجروب.`,
+          mentions: [target],
+        });
+        return true;
+      }
+    } catch (err) {
+      console.error(`⚠️ فشل تنفيذ ${action}:`, err.message);
+      await sendText(sock, m.jid, '❌ مقدرتش أنفذ الأمر — اتأكد إني أدمن في الجروب وصلاحياتي كافية.');
+      return true;
     }
     return true;
   }

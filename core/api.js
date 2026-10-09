@@ -268,35 +268,44 @@ export const api = {
     return d.response?.reply ?? '';
   },
 
-  // صورة بالذكاء الاصطناعي — VEX Flux أساسي، Engez Flux احتياطي، MagicStudio احتياطي ثانٍ
-  async image(prompt, { model = '1', pretty = false, ratio = '1:1' } = {}) {
+  // صورة بالذكاء الاصطناعي — Pollinations Flux أساسي وسريع جداً (3-4 ثوان)، VEX وEngez احتياطي
+  async image(prompt, { model = 'flux', ratio = '1:1' } = {}) {
     let lastErr;
-    // 1. الأساسي: VEX AI (Flux 100% شغال ومتحقق)
+    const cleanPrompt = String(prompt || '').trim();
+    if (!cleanPrompt) throw new Error('مطلوب وصف للصورة');
+
+    // 1. الأساسي: Pollinations AI (Flux فائق الجودة والسرعة، مجاني وبدون تايم آوت)
     try {
-      const vexUrl = await this.vexAiImage(prompt, { model: 'flux', ratio });
+      let width = 1024;
+      let height = 1024;
+      if (ratio === '9:16') {
+        width = 768;
+        height = 1344;
+      } else if (ratio === '16:9') {
+        width = 1344;
+        height = 768;
+      }
+      const seed = Math.floor(Math.random() * 10000000);
+      const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?width=${width}&height=${height}&model=flux&nologo=true&seed=${seed}`;
+      return pollUrl;
+    } catch (err) {
+      lastErr = err;
+    }
+
+    // 2. الاحتياطي: VEX AI (Flux)
+    try {
+      const vexUrl = await this.vexAiImage(cleanPrompt, { model: 'flux', ratio });
       if (vexUrl) return vexUrl;
     } catch (err) {
       lastErr = err;
     }
 
-    // 2. الاحتياطي: Flux عبر Engez /api/v1/ai/imageai
+    // 3. الاحتياطي الثاني: Engez Flux
     try {
       const d = await get(
         '/api/v1/ai/imageai',
-        { action: 'توليد', prompt, model: String(model) },
-        30000,
-      );
-      if (d.response?.url) return d.response.url;
-    } catch (err) {
-      lastErr = err;
-    }
-
-    // 3. الاحتياطي الثاني: MagicStudio عبر /api/v1/ai/image-generator
-    try {
-      const d = await get(
-        '/api/v1/ai/image-generator',
-        { action: 'generate', prompt, model: '4' },
-        30000,
+        { action: 'توليد', prompt: cleanPrompt, model: '1' },
+        20000,
       );
       if (d.response?.url) return d.response.url;
     } catch (err) {
