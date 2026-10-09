@@ -255,6 +255,7 @@ export async function sendQuickReplies(sock, jid, {
   sections = null,
   selectTitle = 'اختر من القائمة',
   mentions = null,
+  quoted = null,
 }) {
   const list = [...buttons];
   if (list.length > 10) list.length = 10; // حد واتساب 10 أزرار
@@ -262,7 +263,31 @@ export async function sendQuickReplies(sock, jid, {
 
   // مفيش أزرار ولا قوائم → نص عادي (أرخص وأضمن من كارت فاضي)
   if (!list.length && !sections?.length) {
-    return withRetry('إرسال نص', () => sock.sendMessage(jid, { text: String(text ?? ''), ...extra }));
+    return withRetry('إرسال نص', () => sock.sendMessage(jid, { text: String(text ?? ''), ...extra }, quoted ? { quoted } : {}));
+  }
+
+  // 👥 في الجروبات: تحويل فوري لنص منظم وموثوق 100% لتفادي إسقاط واتساب للأزرار التفاعلية (Native Flow)
+  if (jid && String(jid).endsWith('@g.us')) {
+    let groupText = title ? `╭───「 ${title} 」───╮\n\n` : '';
+    groupText += String(text ?? '');
+    if (list.length) {
+      groupText += '\n\n📂 *الخيارات المتاحة:*';
+      for (const btn of list) {
+        groupText += `\n▸ ${btn.label}: \`${btn.id}\``;
+      }
+    }
+    if (sections?.length) {
+      for (const s of sections) {
+        groupText += `\n\n◆ *${s.title ?? ''}*`;
+        for (const r of s.rows ?? []) {
+          groupText += `\n  • ${r.header ? r.header + ' ' : ''}*${r.title}*: \`${r.id}\``;
+        }
+      }
+    }
+    groupText += '\n\n╰─────────────────────────╯';
+    return withRetry('إرسال نص الجروب المنظم', () =>
+      sock.sendMessage(jid, { text: groupText, ...extra }, quoted ? { quoted } : {})
+    );
   }
 
   try {

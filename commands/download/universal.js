@@ -62,8 +62,19 @@ export default {
 
         const buttons = [
           { label: '🎧 تحميل صوت MP3', id: `.song ${targetUrl}` },
-          { label: '🎬 تحميل فيديو 360p', id: `.getlink 360` },
           { label: '🎬 تحميل فيديو 720p', id: `.getlink 720` },
+          { label: '📱 تحميل فيديو 360p', id: `.getlink 360` },
+        ];
+
+        const sections = [
+          {
+            title: '🎬 خيارات تحميل يوتيوب',
+            rows: [
+              { header: '🎧', title: 'صوت MP3 بجودة عالية', description: 'تحميل الصوت فقط بصيغة MP3', id: `.song ${targetUrl}` },
+              { header: '🎬', title: 'فيديو بجودة 720p HD', description: 'مشاهدة عالية الدقة', id: `.getlink 720` },
+              { header: '📱', title: 'فيديو بجودة 360p توفير', description: 'حجم خفيف مناسب للباقات', id: `.getlink 360` },
+            ],
+          },
         ];
 
         if (vid?.url) {
@@ -72,6 +83,8 @@ export default {
             title: '🎬 خيارات إضافية',
             text: 'تحب تنزل الصوت أو جودة تانية؟ 👇',
             buttons,
+            sections,
+            selectTitle: '📋 اختر صيغة التحميل',
           }).catch(() => {});
         }
 
@@ -85,6 +98,8 @@ export default {
           title: '🎬 صيغ التحميل',
           text: 'اختر الصيغة اللي تناسبك 👇',
           buttons,
+          sections,
+          selectTitle: '📋 اختر صيغة التحميل',
         });
       } catch (err) {
         return m.reply('❌ تعذر جلب فيديو يوتيوب، اتأكد من الرابط أو جرب أمر `.song` للأغاني.');

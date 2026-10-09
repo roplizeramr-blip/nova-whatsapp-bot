@@ -208,6 +208,38 @@ export const AGENT_TOOLS_SPEC = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'send_message',
+      description: 'إرسال رسالة واتساب إلى شخص أو جهة اتصال محددة (مثل شروق، أدهم، عمرو، أو رقم هاتف). استدعِ هذه الأداة فوراً عندما يطلب المستخدم: "ابعت لـ...", "رسالة لـ...", "كلم فلان...", "ارسل لشروق...", "ابعت لشروق وحشاني...", "send message to...".',
+      parameters: {
+        type: 'object',
+        properties: {
+          recipient: {
+            type: 'string',
+            description: 'اسم الشخص المستهدف (شروق، أدهم، عمرو) أو رقم هاتفه بالصيغة الدولية أو المحلية',
+          },
+          message: {
+            type: 'string',
+            description: 'نص الرسالة التي يريد المستخدم إرسالها إلى المستلم',
+          },
+        },
+        required: ['recipient', 'message'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'make_sticker',
+      description: 'تحويل الصورة المرفقة أو المقتبسة إلى ملصق (ستيكر) واتساب. استدعِ هذه الأداة فوراً عندما يطلب المستخدم: "اعملها ستيكر", "حولها ملصق", "ستيكر", "ملصق", "make sticker".',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
 ];
 
 /**
@@ -490,6 +522,76 @@ export async function executeAgentTool(sock, m, toolCall, profile = {}) {
       return true;
     }
     return true;
+  }
+
+  // 11) إرسال رسالة لشخص (واتساب خاص)
+  if (name === 'send_message') {
+    const rawRecipient = String(args.recipient || '').trim().toLowerCase();
+    const messageToSend = String(args.message || '').trim();
+
+    if (!messageToSend) {
+      await sendText(sock, m.jid, '💌 قولي عايزني أبعتله إيه بالظبط يا صاحبي؟');
+      return true;
+    }
+
+    let targetJid = null;
+    let targetName = args.recipient || 'المستلم';
+
+    if (/شروق|shorouk|shrouk/i.test(rawRecipient)) {
+      targetJid = '201002135088@s.whatsapp.net';
+      targetName = 'شروق';
+    } else if (/ادهم|أدهم|adham/i.test(rawRecipient)) {
+      targetJid = '201273990719@s.whatsapp.net';
+      targetName = 'أدهم';
+    } else if (/عمرو|amr/i.test(rawRecipient)) {
+      targetJid = '201044626335@s.whatsapp.net';
+      targetName = 'عمرو';
+    } else {
+      const digits = rawRecipient.replace(/\D/g, '');
+      if (digits.length >= 10) {
+        const fullNum = digits.startsWith('0') ? `2${digits}` : (digits.startsWith('2') ? digits : `20${digits}`);
+        targetJid = `${fullNum}@s.whatsapp.net`;
+        targetName = digits;
+      }
+    }
+
+    if (!targetJid) {
+      await sendText(sock, m.jid, `🤔 معرفتش أوصل لرقم "${args.recipient}" يا صاحبي، اتأكد من الاسم (شروق / أدهم / عمرو) أو اكتب رقمه.`);
+      return true;
+    }
+
+    try {
+      const senderName = profile?.name && profile.name !== 'unknown'
+        ? profile.name
+        : (String(m.sender).includes('263488291246130') || String(m.sender).includes('201273990719') ? 'أدهم' : (m.pushName || 'صاحبك'));
+
+      // إرسال الرسالة للشخص المستهدف
+      await sock.sendMessage(targetJid, {
+        text: `💌 *رسالة واصلالك من ${senderName}:*\n\n"${messageToSend}"\n\n⚡ _تم التوصيل بواسطة استرو بـوت_`,
+      });
+
+      // إشعار تأكيد فوري للشخص الراسل في الشات
+      const confirmText = `💌 حاضر من عيني يا صاحبي! بعت رسالتك لـ *${targetName}* في الخاص:\n\n"${messageToSend}"\n\nوصلتها خلاص وعيوني ليك دايماً ❤️✨`;
+      if (m.isGroup) {
+        await sendText(sock, m.jid, confirmText, { quoted: m.msg });
+      } else {
+        await sendText(sock, m.jid, confirmText);
+      }
+      return true;
+    } catch (err) {
+      console.error('⚠️ فشل إرسال الرسالة للمستلم:', err.message);
+      await sendText(sock, m.jid, `❌ حصلت مشكلة وأنا ببعت الرسالة لـ ${targetName} — جرب تاني كمان شوية.`);
+      return true;
+    }
+  }
+
+  // 12) صناعة الملصقات (Sticker)
+  if (name === 'make_sticker') {
+    const stickerMod = await import('../commands/tools/sticker.js').catch(() => null);
+    if (stickerMod?.default) {
+      await stickerMod.default.execute(sock, m, []);
+      return true;
+    }
   }
 
   return false;

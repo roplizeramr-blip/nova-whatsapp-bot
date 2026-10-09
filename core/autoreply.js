@@ -43,7 +43,20 @@ function normQ(t) {
 }
 
 function botNumbers(sock) {
-  return [sock.user?.id, sock.user?.lid].filter(Boolean).map(normJid);
+  const nums = new Set();
+  const add = (v) => {
+    if (!v) return;
+    const n = String(v).split(':')[0].split('@')[0].replace(/\D/g, '');
+    if (n) nums.add(n);
+  };
+  add(sock?.user?.id);
+  add(sock?.user?.lid);
+  add(sock?.user?.jid);
+  add(sock?.authState?.creds?.me?.id);
+  add(sock?.authState?.creds?.me?.lid);
+  add(config.pairingPhone);
+  add('201226110887');
+  return Array.from(nums);
 }
 
 // هل الرسالة موجهة للبوت؟
@@ -63,7 +76,7 @@ export function isAddressedToBot(sock, m) {
     return true;
   }
 
-  // 🗣️ وضع الشات الكامل: الجروب اللي مفعّل فيه — نوفا يرد على كل حاجة
+  // 🗣️ وضع الشات الكامل: الجروب اللي مفعّل فيه — استرو يرد على كل حاجة
   try {
     if (getSettings(m.jid).aiChatAll && mode !== 'quiet') return true;
   } catch {}
@@ -75,7 +88,11 @@ export function isAddressedToBot(sock, m) {
   // 2) لو نداء واضح باسم البوت (استرو / نوفا / يا بوت / astro / nova)
   if (triggered) return true;
 
-  // 3) لو رد/اقتباس لرسالة من رسائل البوت — فلترة صارمة لمنع الرد على الضحك والكلمات العابرة
+  // 3) لو طلب إجراء أو أداة ذكية مباشرة في الجروب (رسم، ألعاب، أغاني، إدارة)
+  const hasActionIntent = /^(?:ارسم|ارسم\s*لي|صورة\s*لـ|اعملي\s*صورة|اعمللي\s*فيديو|صنع\s*فيديو|فيديو\s*لـ|حمل\s*اغنية|شغل\s*اغنية|هات\s*اغنية|نزل\s*اغنية|العب\s*معايا|شغل\s*لعبة|اكس\s*او|صراحة|رقي|اطرد|طرد|عدل\s*الصورة|تعديل\s*صورة|ستيكر|ملصق)/i.test(text);
+  if (hasActionIntent) return true;
+
+  // 4) لو رد/اقتباس لرسالة من رسائل البوت — فلترة صارمة لمنع الرد على الضحك والكلمات العابرة
   if (repliedToBot) {
     const isTrivial = /^(?:اه|أه|لا|تمام|اوك|اوكي|ماشي|ماشى|شكرا|شكراً|😂+|🤣+|هههه+|هنج|ضحك|ايوة|ايوه|تسلم|حبيبي|منور|كفو|حلو|جميل|مشكور|ليه|مين|طب|طيب|خلاص|عادي|بس)$/i.test(text);
     if (isTrivial || text.length < 3) return false;
@@ -373,10 +390,20 @@ export async function maybeAutoReply(sock, m) {
     buttons.push({ label: '🎧 استمع بصوت', id: '.ai voice' });
   }
 
-  if (buttons.length > 0) {
-    await sendQuickReplies(sock, m.jid, { text: reply, buttons });
+  // 💡 إرسال الرد: في الجروبات نبعت نص مباشر مع اقتباس رسالة المستخدم { quoted: m.msg }
+  // لتفادي إسقاط واتساب للأزرار التفاعلية (Native Flow) في الجروبات وضمان وصول الإشعار
+  if (m.isGroup) {
+    let groupReply = reply;
+    if (reasoning && reasoning.trim().length > 10) {
+      groupReply += '\n\n💡 _اكتب `.ai thought` لمعرفة خطوات التفكير_';
+    }
+    await sendText(sock, m.jid, groupReply, { quoted: m.msg });
   } else {
-    await sendText(sock, m.jid, reply);
+    if (buttons.length > 0) {
+      await sendQuickReplies(sock, m.jid, { text: reply, buttons });
+    } else {
+      await sendText(sock, m.jid, reply);
+    }
   }
 
   // 😐 لو مود هادي → عديّ رسالة من فترة التبريد
