@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WaClient, createStore, createNoopLogger } from 'zapo-js';
+import { createSqliteStore } from '@zapo-js/store-sqlite';
 import { voipPlugin } from '@zapo-js/voip';
 import { GeminiLiveSession } from './gemini-live.js';
 import { config, CONTACTS } from '../config.js';
@@ -14,9 +15,12 @@ const activeCallSessions = new Map();
 let currentZapoClient = null;
 let currentBaileysSock = null;
 let zapoConnecting = false;
+let zapoPaired = false;
+let latestPairingCode = null;
+let pairingCodeRequestedAt = 0;
 
 /**
- * استرجاع ملفات جلسة VoIP من قاعدة بيانات PostgreSQL
+ * استرجاع ملفات جلسة VoIP من قاعدة بيانات PostgreSQL مع دعم الملفات الثنائية (SQLite)
  */
 async function restoreVoipSessionFromDb() {
   if (!isDbConfigured()) return 0;
@@ -25,7 +29,11 @@ async function restoreVoipSessionFromDb() {
     if (!pool) return 0;
 
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS session_voip_storage (\n        key VARCHAR(512) PRIMARY KEY,\n        value TEXT NOT NULL,\n        updated_at TIMESTAMPTZ DEFAULT NOW()\n      );
+      CREATE TABLE IF NOT EXISTS session_voip_storage (
+        key VARCHAR(512) PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     const res = await pool.query('SELECT key, value FROM session_voip_storage');
@@ -40,7 +48,11 @@ async function restoreVoipSessionFromDb() {
       if (!row.key || typeof row.value !== 'string') continue;
       const target = join(VOIP_SESSION_DIR, row.key);
       mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, row.value, 'utf8');
+      if (row.value.startsWith('b64:')) {
+        writeFileSync(target, Buffer.from(row.value.slice(4), 'base64'));
+      } else {
+        writeFileSync(target, row.value, 'utf8');
+      }
       count++;
     }
 
@@ -53,7 +65,7 @@ async function restoreVoipSessionFromDb() {
 }
 
 /**
- * حفظ ملفات جلسة VoIP إلى PostgreSQL
+ * حفظ ملفات جلسة VoIP إلى PostgreSQL مع تشفير Base64 لملفات SQLite
  */
 async function syncVoipSessionToDb() {
   if (!isDbConfigured() || !existsSync(VOIP_SESSION_DIR)) return 0;
@@ -79,7 +91,8 @@ async function syncVoipSessionToDb() {
       for (const f of files) {
         let content;
         try {
-          content = readFileSync(f.full, 'utf8');
+          const buf = readFileSync(f.full);
+          content = 'b64:' + buf.toString('base64');
         } catch {
           continue;
         }
@@ -106,19 +119,68 @@ async function syncVoipSessionToDb() {
 }
 
 /**
+ * إرسال إشعار بكود ربط جهاز المكالمات للمالك والمطور عبر واتساب
+ */
+async function notifyOwnerWithPairingCode(code) {
+  if (!currentBaileysSock || !code) return;
+
+  const pairingMsg =
+    `╭───『 📞 تـفـعـيـل مـكـالـمـات واتـسـاب الـحـيـة ⚡ 』───╮\n` +
+    `│\n` +
+    `│ 🎙️ *كود ربط جهاز المكالمات الصوتية المباشرة:*\n` +
+    `│ 🔢 *${code}*\n` +
+    `│\n` +
+    `│ 📲 خطوات التفعيل السريعة (مرة واحدة فقط):\n` +
+    `│ 1. افتح واتساب على هاتفك 📱\n` +
+    `│ 2. الإعدادات ⚙️ ⬅️ الأجهزة المرتبطة\n` +
+    `│ 3. اضغط "ربط جهاز" ⬅️ "الربط برقم الهاتف"\n` +
+    `│ 4. اكتب الكود: *${code}*\n` +
+    `│\n` +
+    `│ ⚡ شغال بنموذج: *Gemini 3.8 Live Extended Thinking*\n` +
+    `│ 🗣️ نفس شخصية استرو المصرية الجدعة وخفيفة الظل!\n` +
+    `│ بمجرد إدخال الكود، البوت هيرد مباشرة على أي رنة تليفون!\n` +
+    `╰─────────────────────────╯`;
+
+  const recipients = ['201044626335@s.whatsapp.net', '263488291246130@lid'];
+  for (const jid of recipients) {
+    await currentBaileysSock.sendMessage(jid, { text: pairingMsg }).catch(() => {});
+  }
+}
+
+/**
  * تشغيل محرك مكالمات واتساب الأصلية داخل التطبيق (Native In-App VoIP Call)
  */
 export async function startZapoVoipEngine(customStore = null, baileysSock = null) {
-  if (currentZapoClient) return currentZapoClient;
   if (baileysSock) currentBaileysSock = baileysSock;
+  if (currentZapoClient) return currentZapoClient;
 
   try {
     console.log('⚡ [VOIP] جاري بدء تهيئة محرك المكالمات الحية داخل واتساب (Zapo VoIP Engine)...');
 
     // استرجاع جلسة VoIP السحابية إن وُجدت
     await restoreVoipSessionFromDb().catch(() => {});
+    mkdirSync(VOIP_SESSION_DIR, { recursive: true });
 
-    const store = customStore || createStore();
+    // إعداد مخزن SQLite الدائم لـ Zapo
+    const store = customStore || createStore({
+      backends: {
+        sqlite: createSqliteStore({ path: join(VOIP_SESSION_DIR, 'state.sqlite') })
+      },
+      providers: {
+        auth: 'sqlite',
+        signal: 'sqlite',
+        preKey: 'sqlite',
+        session: 'sqlite',
+        identity: 'sqlite',
+        senderKey: 'sqlite',
+        appState: 'sqlite',
+        privacyToken: 'sqlite',
+        messages: 'none',
+        threads: 'none',
+        contacts: 'none'
+      }
+    });
+
     const logger = createNoopLogger();
 
     const client = new WaClient(
@@ -131,7 +193,8 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
         plugins: [
           voipPlugin({
             maxConcurrentCalls: 1,
-            logLevel: 'warn'
+            logLevel: 'warn',
+            useOriginalRelayPort: true
           })
         ]
       },
@@ -140,55 +203,49 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
 
     currentZapoClient = client;
 
-    // 🔢 1. طلب كود الربط عند الحاجة إلى تسجيل جهاز المكالمات التابع
-    client.on('auth_pairing_required', async () => {
+    // معالج طلب كود الربط عند الحاجة
+    const handlePairingFlow = async () => {
+      if (Date.now() - pairingCodeRequestedAt < 15000) return;
+      pairingCodeRequestedAt = Date.now();
+
+      const state = client.auth?.getState();
+      if (state?.registered) {
+        zapoPaired = true;
+        return;
+      }
+
       console.log('\n======================================================');
       console.log('🔢 [NATIVE-VOIP] جاري طلب كود تفعيل المكالمات الصوتية المباشرة...');
       try {
         const phone = String(config.pairingPhone || '201226110887').replace(/\D/g, '');
         const rawCode = await client.auth.requestPairingCode(phone);
         const prettyCode = rawCode?.match(/.{1,4}/g)?.join('-') ?? rawCode;
+        latestPairingCode = prettyCode;
 
         console.log(`📞 [NATIVE-VOIP] كود تفعيل المكالمات الصوتية الحية: ${prettyCode}`);
         console.log('======================================================\n');
 
-        // إرسال الكود فوراً للمالك ومطور البوت عبر واتساب
-        const ownerJid = '201044626335@s.whatsapp.net';
-        const devJid = '263488291246130@lid';
-
-        const pairingMsg =
-          `╭───『 📞 تـفـعـيـل مـكـالـمـات واتـسـاب الـحـيـة ⚡ 』───╮\n` +
-          `│\n` +
-          `│ 🎙️ *كود ربط جهاز المكالمات الصوتية المباشرة:*\n` +
-          `│ 🔢 *${prettyCode}*\n` +
-          `│\n` +
-          `│ 📲 خطوات التفعيل السريعة (مرة واحدة فقط):\n` +
-          `│ 1. افتح واتساب على هاتفك 📱\n` +
-          `│ 2. الإعدادات ⚙️ ⬅️ الأجهزة المرتبطة\n` +
-          `│ 3. اضغط "ربط جهاز" ⬅️ "الربط برقم الهاتف"\n` +
-          `│ 4. اكتب الكود: *${prettyCode}*\n` +
-          `│\n` +
-          `│ ⚡ شغال بنموذج: *Gemini 3.8 Live Extended Thinking*\n` +
-          `│ 🗣️ نفس شخصية استرو المصرية الجدعة وخفيفة الظل!\n` +
-          `│ بمجرد إدخال الكود، البوت هيرد مباشرة على أي رنة تليفون!\n` +
-          `╰─────────────────────────╯`;
-
-        if (currentBaileysSock) {
-          await currentBaileysSock.sendMessage(ownerJid, { text: pairingMsg }).catch(() => {});
-          await currentBaileysSock.sendMessage(devJid, { text: pairingMsg }).catch(() => {});
-        }
+        await notifyOwnerWithPairingCode(prettyCode);
       } catch (err) {
         console.warn('⚠️ [NATIVE-VOIP] تعذر طلب كود الربط:', err.message);
       }
-    });
+    };
+
+    // 🔢 1. طلب كود الربط عند ظهور حدث auth_qr أو auth_pairing_required
+    client.on('auth_qr', handlePairingFlow);
+    client.on('auth_pairing_required', handlePairingFlow);
 
     // 🎉 2. عند اكتمال الربط بنجاح
     client.on('auth_paired', async () => {
+      zapoPaired = true;
       console.log('🎉 [NATIVE-VOIP] تم ربط جهاز المكالمات الصوتية بنجاح بنظام الأجهزة المتعددة!');
       await syncVoipSessionToDb().catch(() => {});
 
       if (currentBaileysSock) {
-        const successMsg = '🎉 *تم تفعيل مكالمات واتساب الصوتية الحية بنجاح 100%!* أسترو جاهز الآن للرد المباشر داخل واتساب والتحدث بالصوت المصري الذكي ⚡';
+        const successMsg =
+          `🎉 *تم تفعيل مكالمات واتساب الصوتية الحية بنجاح 100%!* ⚡\n\n` +
+          `أصبح جهاز المكالمات مقترناً بحساب البوت.\n` +
+          `أسترو جاهز الآن للرد المباشر داخل واتساب والتحدث بالصوت المصري الذكي عند الاتصال في أي وقت! 📞🎙️`;
         currentBaileysSock.sendMessage('201044626335@s.whatsapp.net', { text: successMsg }).catch(() => {});
         currentBaileysSock.sendMessage('263488291246130@lid', { text: successMsg }).catch(() => {});
       }
@@ -234,14 +291,16 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
           console.error('[NATIVE-VOIP] خطأ في جلسة Gemini Live:', err.message);
         });
 
-        await liveSession.connect();
+        await liveSession.connect().catch((err) => {
+          console.warn('⚠️ [NATIVE-VOIP] تعذر اتصال جلسة Gemini Live:', err.message);
+        });
 
       } catch (err) {
         console.error('❌ [NATIVE-VOIP] فشل في قبول المكالمة:', err.message);
       }
     });
 
-    // 🎤 4. استلام صوت المتصل من مايكروفون واتساب وإرساله فوراً إلى Gemini 3.8 Live
+    // 🎤 4. استلام صوت المتصل من مايكروفون واتساب وإرساله فوراً إلى الذكاء الاصطناعي
     client.on('voip_call_inbound_audio', ({ call, pcm }) => {
       const liveSession = activeCallSessions.get(call.callId);
       if (liveSession && liveSession.ready) {
@@ -263,11 +322,12 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
     client.on('connection', (event) => {
       console.log(`[NATIVE-VOIP:CONN] حالة اتصال Zapo: ${event.status}`);
       if (event.status === 'open') {
+        zapoPaired = true;
         syncVoipSessionToDb().catch(() => {});
       }
     });
 
-    // بدء الاتصال بواتساب في الخلفية دون تعطيل العملية الرئيسية
+    // بدء الاتصال بواتساب في الخلفية
     if (!zapoConnecting) {
       zapoConnecting = true;
       void client.connect().catch((err) => {
@@ -286,11 +346,60 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
   }
 }
 
+/**
+ * هل محرك Zapo مقترن وجاهز لاستقبال المكالمات فعلياً؟
+ */
+export function isZapoReady() {
+  if (!currentZapoClient) return false;
+  const state = currentZapoClient.auth?.getState();
+  return !!(state?.registered && (state?.connected || zapoPaired));
+}
+
+export function getLatestPairingCode() {
+  return latestPairingCode;
+}
+
+/**
+ * طلب أو استرجاع كود ربط جهاز المكالمات فوراً
+ */
+export async function requestPairingCodeNow() {
+  if (latestPairingCode && Date.now() - pairingCodeRequestedAt < 120000) {
+    return latestPairingCode;
+  }
+
+  if (!currentZapoClient) {
+    await startZapoVoipEngine(null, currentBaileysSock);
+  }
+
+  // انتظر حتى يتم توليد الكود عبر مستمع auth_qr (حتى 6 ثوانٍ)
+  for (let i = 0; i < 12; i++) {
+    if (latestPairingCode) return latestPairingCode;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  if (latestPairingCode) return latestPairingCode;
+
+  // محاولة أخيرة لو لم يكن الكود قد طُلب بعد
+  try {
+    const phone = String(config.pairingPhone || '201226110887').replace(/\D/g, '');
+    const raw = await currentZapoClient.auth.requestPairingCode(phone);
+    const pretty = raw?.match(/.{1,4}/g)?.join('-') ?? raw;
+    latestPairingCode = pretty;
+    pairingCodeRequestedAt = Date.now();
+    return pretty;
+  } catch (err) {
+    return latestPairingCode || null;
+  }
+}
+
 export function getZapoClient() {
   return currentZapoClient;
 }
 
 export default {
   startZapoVoipEngine,
-  getZapoClient
+  getZapoClient,
+  isZapoReady,
+  getLatestPairingCode,
+  requestPairingCodeNow
 };

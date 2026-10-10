@@ -2,32 +2,36 @@ import { GeminiLiveSession, buildAstroCallPrompt } from './gemini-live.js';
 import resampler from './audio-resampler.js';
 import { config, CONTACTS } from '../config.js';
 import { sendVoice, sendText } from './send.js';
-import { startZapoVoipEngine } from './zapo-engine.js';
+import {
+  startZapoVoipEngine,
+  isZapoReady,
+  getLatestPairingCode,
+  requestPairingCodeNow
+} from './zapo-engine.js';
 
 let zapoClient = null;
-let zapoActive = false;
 const activeLiveSessions = new Map();
 
 /**
  * Initializes Call Engine on the active WhatsApp socket (Baileys)
- * Listens for incoming WhatsApp call offers and initializes Zapo VoIP
+ * Listens for incoming WhatsApp call offers and coordinates with Zapo VoIP
  */
 export function initCallEngine(sock) {
   if (!sock || !sock.ev) return;
 
-  // محاولة تشغيل محرك Zapo VoIP للرد المباشر داخل شاشة واتساب
+  // تشغيل محرك Zapo VoIP للرد المباشر داخل شاشة واتساب
   setTimeout(() => {
     startZapoVoipEngine(null, sock)
       .then((client) => {
         if (client) {
-          attachZapoClient(client);
-          console.log('⚡ [VOIP] محرك المكالمات الحية داخل واتساب (Zapo Native) جاهز ويعمل');
+          zapoClient = client;
+          console.log('⚡ [VOIP] محرك المكالمات الحية داخل واتساب (Zapo Native) قيد التشغيل والمراقبة');
         }
       })
       .catch((err) => {
         console.warn('ℹ️ [VOIP] محرك Zapo في انتظار جاهزية الجلسة:', err.message);
       });
-  }, 3000);
+  }, 2000);
 
   sock.ev.on('call', async (calls) => {
     for (const call of calls) {
@@ -37,15 +41,44 @@ export function initCallEngine(sock) {
         console.log(`\n📞 [VOIP] مكالمة واردة من: ${callerJid} (Call ID: ${callId})`);
 
         try {
-          // 1. لو محرك Zapo VoIP شغال ومسجل، Zapo هو اللي هيقبل المكالمة ويبث الصوت داخل واتساب
-          if (zapoActive && zapoClient) {
-            console.log(`[VOIP] محرك Zapo نشط — جاري التقاط المكالمة داخل واتساب...`);
+          // 1. إذا كان محرك Zapo VoIP مقترناً وشغال، Zapo هو اللي هيقبل المكالمة ويبث الصوت مباشرة
+          if (isZapoReady()) {
+            console.log(`[VOIP] محرك Zapo نشط ومقترن — يتم الرد ومعالجة المكالمة داخل واتساب تلقائياً عبر Zapo VoIP`);
             continue;
           }
 
-          // 2. إذا لم تكن جلسة Zapo مكتملة بعد:
-          // توليد رد صوتي فوري عبر Gemini Live وبثه كـ Voice Note (PTT) مصري أصيل دون أي روابط نهائياً
+          // 2. إذا لم يكن جهاز المكالمات مقترناً بعد:
+          console.log(`⚠️ [VOIP] جهاز المكالمات غير مقترن حتى الآن! جاري رفض الرنة بلباقة وتوليد رد فوري للمتصل وإرسال كود الربط...`);
+
+          // إنهاء الرنة بلباقة حتى لا تظل ترن بلا نهاية
+          await sock.rejectCall(callId, callerJid).catch(() => {});
+
+          // توليد رد صوتي فوري عبر الذكاء الاصطناعي وبثه كـ Voice Note (PTT) مصري أصيل دون أي روابط نهائياً
           generateInstantLiveGreeting(sock, callerJid);
+
+          // إرسال كود التفعيل إذا كان المتصل هو المالك أو المطور
+          const isOwnerOrDev =
+            callerJid.includes('201044626335') ||
+            callerJid.includes('263488291246130') ||
+            callerJid.includes('201273990719');
+
+          if (isOwnerOrDev) {
+            let code = getLatestPairingCode();
+            if (!code) {
+              try { code = await requestPairingCodeNow(); } catch (_) {}\n            }
+
+            if (code) {
+              const pairingHelp =
+                `╭───『 📞 تفعيل مكالمات واتساب الصوتية ⚡ 』───╮\n` +
+                `│ لاحظت رنتك يا كبير! عشان أفتح الخط عليك مباشرة:\n` +
+                `│ 🔢 الكود: *${code}*\n` +
+                `│\n` +
+                `│ اربطه مرة واحدة من:\n` +
+                `│ واتساب > الأجهزة المرتبطة > ربط جهاز > الربط برقم الهاتف\n` +
+                `╰─────────────────────────╯`;
+              await sock.sendMessage(callerJid, { text: pairingHelp }).catch(() => {});
+            }
+          }
 
         } catch (err) {
           console.error('⚠️ خطأ في معالجة المكالمة الواردة:', err.message);
@@ -90,7 +123,7 @@ async function generateInstantLiveGreeting(sock, toJid) {
       });
     });
 
-    await liveSession.connect();
+    await liveSession.connect().catch(() => {});
     liveSession.sendText('أنت استرو، المتصل رن عليك حالا في واتساب. افتح الكلام فوراً بترحيب مصري عامي سريع وخفيف الظل كأنك فتحت الخط وبترد في التليفون: ألو يا فنان! ألو يا غالي! أنا استرو.. استلمت رنتك يا باشا وسامعك يا كبير! ابعتلي فويس باللي في بالك وأنا معاك أرد عليك في ثانية!');
   } catch (err) {
     console.warn('⚠️ تعذر إرسال الفويس الفوري للمتصل:', err.message);
@@ -118,68 +151,6 @@ function createWavHeader(dataLength, sampleRate = 24000, channels = 1, bitDepth 
   return header;
 }
 
-/**
- * Attaches Zapo VoIP Client if started
- */
-export function attachZapoClient(client) {
-  zapoClient = client;
-  zapoActive = true;
-
-  // Incoming call event on Zapo (Native in WhatsApp)
-  client.on('voip_call_incoming', async (call) => {
-    console.log(`\n📞 [ZAPO-VOIP] مكالمة واردة من داخل واتساب! من: ${call.peerJid} (ID: ${call.callId})`);
-    if (call.canAccept) {
-      try {
-        console.log(`⚡ [ZAPO-VOIP] جاري الرد وقبول المكالمة داخل واتساب: ${call.callId}...`);
-        await client.voip.acceptCall(call.callId);
-
-        // إنشاء جلسة بث حي مع Gemini 3.8 Live بشخصية استرو الأصلية
-        const callerPn = call.callerPn ? `${call.callerPn}@s.whatsapp.net` : call.peerJid;
-        const liveSession = new GeminiLiveSession({ callerJid: callerPn });
-        activeLiveSessions.set(call.callId, liveSession);
-
-        liveSession.on('ready', () => {
-          console.log(`🎙️ [ZAPO-VOIP] جاهزية جلسة Gemini Live للمكالمة ${call.callId}`);
-          client.voip.setExternalAudioMode(call.callId, true);
-          liveSession.sendText('المكالمة فتحت الآن.. رحب بالمتصل باللهجة المصرية كأنك فتحت الخط وبترد في التليفون: ألو يا فنان! ألو يا غالي! أسترو معاك، سامعك يا باشا قولّي إيه الأخبار؟');
-        });
-
-        // صوت Gemini يذهب للمتصل في واتساب
-        liveSession.on('audio16kFloat32', (f32Chunk) => {
-          try {
-            client.voip.feedLiveAudio(call.callId, f32Chunk);
-          } catch (e) {
-            console.warn('[ZAPO-VOIP] خطأ في تغذية الصوت:', e.message);
-          }
-        });
-
-        await liveSession.connect();
-
-      } catch (err) {
-        console.error('❌ فشل قبول المكالمة في Zapo:', err.message);
-      }
-    }
-  });
-
-  // User speaks in WhatsApp VoIP -> forward to Gemini Live
-  client.on('voip_call_inbound_audio', ({ call, pcm }) => {
-    const liveSession = activeLiveSessions.get(call.callId);
-    if (liveSession && liveSession.ready) {
-      liveSession.sendAudio(pcm);
-    }
-  });
-
-  client.on('voip_call_ended', (call) => {
-    console.log(`📴 [ZAPO-VOIP] انتهت المكالمة: ${call.callId}`);
-    const liveSession = activeLiveSessions.get(call.callId);
-    if (liveSession) {
-      liveSession.close();
-      activeLiveSessions.delete(call.callId);
-    }
-  });
-}
-
 export default {
-  initCallEngine,
-  attachZapoClient
+  initCallEngine
 };
