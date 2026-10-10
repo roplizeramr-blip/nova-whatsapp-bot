@@ -252,7 +252,7 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
           voipPlugin({
             maxConcurrentCalls: 1,
             logLevel: 'warn',
-            useOriginalRelayPort: true
+            useRawUdpTransport: true
           })
         ]
       },
