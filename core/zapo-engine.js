@@ -19,6 +19,7 @@ let latestPairingCode = null;
 let pairingCodeRequestedAt = 0;
 let latestVoipQr = null;
 let voipQrTimestamp = 0;
+let qrRefreshLock = null;
 
 /**
  * استرجاع ملفات جلسة VoIP من قاعدة بيانات PostgreSQL مع دعم الملفات الثنائية (SQLite)
@@ -313,7 +314,19 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
       console.log(`[NATIVE-VOIP:CONN] حالة اتصال Zapo: ${event.status}`);
       if (event.status === 'open') {
         zapoPaired = true;
+        latestVoipQr = null;
+        latestPairingCode = null;
         syncVoipSessionToDb().catch(() => {});
+      } else if (event.status === 'close' && !isZapoReady()) {
+        // إذا انقطع الاتصال والجهاز لم يقترن بعد، نعيد الاتصال تلقائياً لتوليد باركود جديد
+        setTimeout(() => {
+          if (!isZapoReady() && !zapoConnecting && currentZapoClient) {
+            zapoConnecting = true;
+            currentZapoClient.connect().catch(() => {}).finally(() => {
+              zapoConnecting = false;
+            });
+          }
+        }, 3000);
       }
     });
 
@@ -350,6 +363,82 @@ export function getLatestPairingCode() {
 }
 
 /**
+ * جلب أو تجديد باركود واتساب الحقيقي فوريًا وبشكل مباشر
+ * يضمن إعادة طلب الرمز من خوادم واتساب فور انتهاء صلاحيته
+ */
+export async function getOrRefreshVoipQr(force = false) {
+  if (isZapoReady()) return null;
+
+  const now = Date.now();
+  if (!force && latestVoipQr && (now - voipQrTimestamp < 45000)) {
+    return latestVoipQr;
+  }
+
+  if (qrRefreshLock) {
+    return await qrRefreshLock;
+  }
+
+  qrRefreshLock = (async () => {
+    try {
+      if (!currentZapoClient) {
+        await startZapoVoipEngine(null, currentBaileysSock);
+      }
+      if (!currentZapoClient) return latestVoipQr;
+
+      // فحص سريع إذا تم استلام كود أثناء التهيئة
+      if (!force && latestVoipQr && (Date.now() - voipQrTimestamp < 40000)) {
+        return latestVoipQr;
+      }
+
+      console.log('🔄 [NATIVE-VOIP] جاري تحديث باركود واتساب وطلب رمز ربط جديد من السيرفر...');
+      try {
+        await currentZapoClient.disconnect().catch(() => {});
+      } catch {}
+
+      const qrPromise = new Promise((resolve) => {
+        let done = false;
+        const timer = setTimeout(() => {
+          if (!done) {
+            done = true;
+            resolve(latestVoipQr);
+          }
+        }, 7000);
+
+        const handler = ({ qr, ttlMs }) => {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            latestVoipQr = qr;
+            voipQrTimestamp = Date.now();
+            console.log(`⚡ [NATIVE-VOIP] تم استلام باركود جديد لمكالمات واتساب (TTL: ${ttlMs || 60000}ms)`);
+            resolve(qr);
+          }
+        };
+        currentZapoClient.once('auth_qr', handler);
+      });
+
+      zapoConnecting = true;
+      void currentZapoClient.connect().catch((e) => {
+        console.warn('ℹ️ [NATIVE-VOIP] خطأ أثناء إعادة الاتصال للباركود:', e.message);
+      }).finally(() => {
+        zapoConnecting = false;
+      });
+
+      const freshQr = await qrPromise;
+      if (freshQr) {
+        latestVoipQr = freshQr;
+        voipQrTimestamp = Date.now();
+      }
+      return freshQr || latestVoipQr;
+    } finally {
+      qrRefreshLock = null;
+    }
+  })();
+
+  return await qrRefreshLock;
+}
+
+/**
  * طلب أو استرجاع كود ربط جهاز المكالمات فوراً
  */
 export async function requestPairingCodeNow() {
@@ -383,7 +472,7 @@ export async function requestPairingCodeNow() {
   }
 }
 
-// بدء تشغيل محرك Zapo تلقائياً في الخلفية لطلب الكود وتجهيز المكالمات فور إقلاع السيرفر
+// بدء تشغيل محرك Zapo تلقائياً في الخلفية فور إقلاع السيرفر
 setTimeout(() => {
   if (!currentZapoClient) {
     startZapoVoipEngine(null, currentBaileysSock).catch(() => {});
@@ -399,14 +488,20 @@ export function getLatestVoipQr() {
 }
 
 export function getVoipStatus() {
-  if (!currentZapoClient && !zapoConnecting) {
-    startZapoVoipEngine().catch(() => {});
+  const ready = isZapoReady();
+  const now = Date.now();
+  const hasValidQr = !!(latestVoipQr && (now - voipQrTimestamp < 50000));
+
+  if (!ready && !hasValidQr && !qrRefreshLock) {
+    getOrRefreshVoipQr().catch(() => {});
   }
+
   return {
-    ready: isZapoReady(),
+    ready,
     hasQr: !!latestVoipQr,
     qrTimestamp: voipQrTimestamp,
     latestPairingCode,
+    expiresInSec: latestVoipQr ? Math.max(0, Math.floor((50000 - (now - voipQrTimestamp)) / 1000)) : 0
   };
 }
 
@@ -417,5 +512,7 @@ export default {
   getLatestPairingCode,
   requestPairingCodeNow,
   getLatestVoipQr,
+  getOrRefreshVoipQr,
   getVoipStatus,
 };
+
