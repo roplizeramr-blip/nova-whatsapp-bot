@@ -9,19 +9,14 @@ if (!globalThis.WebSocket) {
 
 import { WaClient, createStore, createNoopLogger, ConsoleLogger } from 'zapo-js';
 import { voipPlugin } from '@zapo-js/voip';
-import {
-  handleIncomingCall,
-  handleOutboundAudioFinished,
-  handleInboundAudio,
-  handleCallEnded,
-} from './call-voice-conductor.js';
+import { GeminiLiveSession } from './gemini-live.js';
 import { config, CONTACTS } from '../config.js';
 import { getDbPool, isDbConfigured } from './postgres.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VOIP_SESSION_DIR = join(__dirname, '..', 'session_voip');
 
-
+const activeCallSessions = new Map();
 let currentZapoClient = null;
 let currentBaileysSock = null;
 let zapoConnecting = false;
@@ -253,24 +248,72 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
       }
     });
 
-    // 📞 3. الرد التلقائي المباشر على المكالمة الواردة داخل شاشة واتساب وبث صوت أسترو
+    // 📞 3. الرد التلقائي المباشر على المكالمة الواردة داخل شاشة واتساب
     client.on('voip_call_incoming', async (call) => {
-      await handleIncomingCall(client, call);
+      console.log(`\n📞 [NATIVE-VOIP] مكالمة واردة من داخل واتساب! من: ${call.peerJid} (ID: ${call.callId})`);
+      if (!call.canAccept) {
+        console.warn(`[NATIVE-VOIP] تعذر قبول المكالمة ${call.callId} — الخط مشغول أو الحالة غير متاحة`);
+        return;
+      }
+
+      try {
+        console.log(`⚡ [NATIVE-VOIP] جاري الرد وقبول المكالمة داخل واتساب مباشرة...`);
+        await client.voip.acceptCall(call.callId);
+        console.log(`🟢 [NATIVE-VOIP] تم الرد على المكالمة بنجاح! المكالمة نشطة الآن في هاتف المتصل`);
+
+        // تفعيل وضع التغذية الصوتية المباشرة
+        client.voip.setExternalAudioMode(call.callId, true);
+
+        // تجهيز جلسة Gemini 3.8 Live مع شخصية أسترو المصرية الأصلية
+        const callerPn = call.callerPn ? `${call.callerPn}@s.whatsapp.net` : call.peerJid;
+        const liveSession = new GeminiLiveSession({ callerJid: callerPn, model: 'gemini-3.8-live' });
+
+        activeCallSessions.set(call.callId, liveSession);
+
+        liveSession.on('ready', () => {
+          console.log(`🎙️ [NATIVE-VOIP] جلسة Gemini 3.8 Live جاهزة للمكالمة ${call.callId}`);
+          liveSession.sendText('المكالمة فتحت الآن في هاتف المتصل.. رحب بالمتصل باللهجة المصرية كأنك فتحت الخط وبترد في التليفون: ألو يا فنان! ألو يا غالي! أسترو معاك، سامعك يا باشا قولّي إيه الأخبار؟');
+        });
+
+        // 🔊 صوت استرو يخرج مباشرة في سماعة هاتف المتصل داخل واتساب
+        liveSession.on('audio16kFloat32', (samples) => {
+          try {
+            client.voip.feedLiveAudio(call.callId, samples);
+          } catch (e) {
+            console.warn('[NATIVE-VOIP] تعذر بث الصوت في المكالمة:', e.message);
+          }
+        });
+
+        liveSession.on('error', (err) => {
+          console.error('[NATIVE-VOIP] خطأ في جلسة Gemini Live:', err.message);
+        });
+
+        await liveSession.connect().catch((err) => {
+          console.warn('⚠️ [NATIVE-VOIP] تعذر اتصال جلسة Gemini Live:', err.message);
+        });
+
+      } catch (err) {
+        console.error('❌ [NATIVE-VOIP] فشل في قبول المكالمة:', err.message);
+      }
     });
 
-    // 🔊 4. عند انتهاء نطق الترحيب أو رد أسترو، يبدأ في الاستماع فوراً للمتصل
-    client.on('voip_call_outbound_audio_finished', (call) => {
-      handleOutboundAudioFinished(client, call);
-    });
-
-    // 🎤 5. استلام صوت المتصل من مايكروفون واتساب ومعالجته تلقائياً بالذكاء الاصطناعي
+    // 🎤 4. استلام صوت المتصل من مايكروفون واتساب وإرساله فوراً إلى الذكاء الاصطناعي
     client.on('voip_call_inbound_audio', ({ call, pcm }) => {
-      handleInboundAudio(client, { call, pcm });
+      const liveSession = activeCallSessions.get(call.callId);
+      if (liveSession && liveSession.ready) {
+        liveSession.sendAudio(pcm);
+      }
     });
 
-    // 📴 6. إغلاق المكالمة وتنظيف الذاكرة
+    // 📴 5. إغلاق المكالمة وتنظيف الذاكرة
     client.on('voip_call_ended', (call) => {
-      handleCallEnded(client, call);
+      const reason = call.stateData?.endReason || 'unknown';
+      console.log(`📴 [NATIVE-VOIP] انتهت المكالمة: ${call.callId} (السبب: ${reason})`);
+      const liveSession = activeCallSessions.get(call.callId);
+      if (liveSession) {
+        liveSession.close();
+        activeCallSessions.delete(call.callId);
+      }
     });
 
     client.on('connection', (event) => {

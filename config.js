@@ -55,12 +55,12 @@ export const config = {
       ],
   sttModel: env('STT_MODEL', 'whisper-large-v3'),
 
-  // 🎙️ الصوت الافتراضي: أنطوني (Antoni عبر ElevenLabs) — صوت رجل رقيق وناعم وطبيعي
-  ttsVoice: env('TTS_VOICE', 'antoni'),
+  // 🎙️ الصوت الافتراضي: نيمار (Neymar عبر VEX) — الصوت الأساسي والرسمي للبوت
+  ttsVoice: env('TTS_VOICE', 'neymar'),
 
   // 🔴 نموذج ومفتاح Gemini 3.8 Live للمكالمات الصوتية الحية
   geminiApiKey: env('GEMINI_API_KEY', 'AIzaSyAxwTASMEQqhGZk7By8s6xPGu7Jq8lMPos'),
-  geminiLiveModel: env('GEMINI_LIVE_MODEL', 'gemini-3.8-live-extended-thinking'),
+  geminiLiveModel: env('GEMINI_LIVE_MODEL', 'gemini-3.8-live'),
 };
 
 // 💚 الأصدقاء المقربين — لكل واحد أسلوب خاص مع استرو

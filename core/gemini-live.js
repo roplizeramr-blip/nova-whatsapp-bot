@@ -44,8 +44,8 @@ export class GeminiLiveSession extends EventEmitter {
   constructor(options = {}) {
     super();
     this.apiKey = options.apiKey || config.geminiApiKey || 'AIzaSyAxwTASMEQqhGZk7By8s6xPGu7Jq8lMPos';
-    this.model = options.model || config.geminiLiveModel || 'gemini-3.8-live-extended-thinking';
-    this.voiceName = options.voiceName || 'Puck'; // Puck, Kore, Fenrir, Aoede
+    this.model = options.model || config.geminiLiveModel || 'gemini-3.8-live';
+    this.voiceName = options.voiceName || 'Puck'; // Puck, Charon, Kore, Fenrir, Aoede
     this.callerJid = options.callerJid || '';
     this.callerName = options.callerName || '';
     this.systemInstruction = options.systemInstruction || buildAstroCallPrompt(this.callerJid, this.callerName);
@@ -59,7 +59,7 @@ export class GeminiLiveSession extends EventEmitter {
    */
   async connect() {
     return new Promise((resolve, reject) => {
-      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${this.apiKey}`;
+      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`;
       this.ws = new WebSocket(url);
 
       const timeout = setTimeout(() => {
