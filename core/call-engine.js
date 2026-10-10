@@ -65,7 +65,8 @@ export function initCallEngine(sock) {
           if (isOwnerOrDev) {
             let code = getLatestPairingCode();
             if (!code) {
-              try { code = await requestPairingCodeNow(); } catch (_) {}\n            }
+              try { code = await requestPairingCodeNow(); } catch (_) {}
+            }
 
             if (code) {
               const pairingHelp =
