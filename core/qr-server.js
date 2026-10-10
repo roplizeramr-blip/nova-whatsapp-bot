@@ -738,6 +738,28 @@ export function startQrServer(port = 3000) {
         return;
       }
 
+      // 🔍 تشخيص دقيق لمحرك VoIP
+      if (req.url.startsWith('/api/voip/debug')) {
+        try {
+          const zapoModule = await import('./zapo-engine.js');
+          const client = zapoModule.getZapoClient();
+          const state = client?.auth?.getState() || null;
+          const status = zapoModule.getVoipStatus();
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify({
+            status,
+            clientCreated: !!client,
+            authState: state,
+            isReady: zapoModule.isZapoReady(),
+            qrLen: status.hasQr ? 239 : 0
+          }, null, 2));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
       // 📞 كود ربط جهاز مكالمات واتساب الصوتية الحية
       if (req.url.startsWith('/api/voip/code') || req.url === '/voip-code') {
         try {
