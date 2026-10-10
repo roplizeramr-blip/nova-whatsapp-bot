@@ -3,7 +3,11 @@
 # لو ات رفعت على git عام، ده يعني ملكية حساب حد تانية.
 session/
 session_voip/
-data/
+data/*
+!data/call_greeting.mp3
+!data/call_greeting.wav
+!data/call_prompt_silence.mp3
+!data/call_prompt_silence.wav
 backups/
 *.log
 .env
