@@ -17,7 +17,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const VOIP_SESSION_DIR = join(__dirname, '..', 'session_voip');
 
 const activeCallSessions = new Map();
-const activeCallKeepalives = new Map();
 let currentZapoClient = null;
 let currentBaileysSock = null;
 let zapoConnecting = false;
@@ -334,22 +333,6 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
         // تفعيل وضع التغذية الصوتية المباشرة
         client.voip.setExternalAudioMode(call.callId, true);
 
-        // بدء تدفق حزم الصوت المباشرة فوراً لإبقاء المكالمة حية 100% دون أي انقطاع
-        const silenceChunk = new Float32Array(640); // 40ms silence at 16kHz
-        client.voip.feedLiveAudio(call.callId, silenceChunk);
-        client.voip.feedLiveAudio(call.callId, silenceChunk);
-
-        const keepaliveTimer = setInterval(() => {
-          try {
-            if (!client.voip) return;
-            const bufMs = client.voip.getLiveBufferMs(call.callId);
-            if (bufMs < 80) {
-              client.voip.feedLiveAudio(call.callId, silenceChunk);
-            }
-          } catch (_) {}
-        }, 30);
-        activeCallKeepalives.set(call.callId, keepaliveTimer);
-
         // تجهيز جلسة Gemini 3.8 Live مع شخصية أسترو المصرية الأصلية
         const callerPn = call.callerPn ? `${call.callerPn}@s.whatsapp.net` : call.peerJid;
         const liveSession = new GeminiLiveSession({ callerJid: callerPn, model: 'gemini-3.8-live' });
@@ -364,6 +347,7 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
         // 🔊 صوت استرو يخرج مباشرة في سماعة هاتف المتصل داخل واتساب
         liveSession.on('audio16kFloat32', (samples) => {
           try {
+            console.log(`🔊 [NATIVE-VOIP] بث ${samples.length} عينة صوتية حية إلى هاتف المتصل`);
             client.voip.feedLiveAudio(call.callId, samples);
           } catch (e) {
             console.warn('[NATIVE-VOIP] تعذر بث الصوت في المكالمة:', e.message);
@@ -395,11 +379,6 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
     client.on('voip_call_ended', (call) => {
       const reason = call.stateData?.endReason || 'unknown';
       console.log(`📴 [NATIVE-VOIP] انتهت المكالمة: ${call.callId} (السبب: ${reason})`);
-      const timer = activeCallKeepalives.get(call.callId);
-      if (timer) {
-        clearInterval(timer);
-        activeCallKeepalives.delete(call.callId);
-      }
       const liveSession = activeCallSessions.get(call.callId);
       if (liveSession) {
         liveSession.close();
