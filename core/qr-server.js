@@ -783,7 +783,8 @@ export function startQrServer(port = 3000) {
             clientCreated: !!client,
             authState: state,
             isReady: zapoModule.isZapoReady(),
-            qrLen: status.hasQr ? 239 : 0
+            qrLen: status.hasQr ? 239 : 0,
+            qrText: zapoModule.getLatestVoipQr()
           }, null, 2));
         } catch (err) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
