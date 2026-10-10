@@ -2,7 +2,6 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WaClient, createStore, createNoopLogger } from 'zapo-js';
-import { createSqliteStore } from '@zapo-js/store-sqlite';
 import { voipPlugin } from '@zapo-js/voip';
 import { GeminiLiveSession } from './gemini-live.js';
 import { config, CONTACTS } from '../config.js';
@@ -161,25 +160,35 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
     await restoreVoipSessionFromDb().catch(() => {});
     mkdirSync(VOIP_SESSION_DIR, { recursive: true });
 
-    // إعداد مخزن SQLite الدائم لـ Zapo
-    const store = customStore || createStore({
-      backends: {
-        sqlite: createSqliteStore({ path: join(VOIP_SESSION_DIR, 'state.sqlite') })
-      },
-      providers: {
-        auth: 'sqlite',
-        signal: 'sqlite',
-        preKey: 'sqlite',
-        session: 'sqlite',
-        identity: 'sqlite',
-        senderKey: 'sqlite',
-        appState: 'sqlite',
-        privacyToken: 'sqlite',
-        messages: 'none',
-        threads: 'none',
-        contacts: 'none'
+    // إعداد مخزن الجلسة لـ Zapo (مع دعم احتياطي تلقائي)
+    let store = customStore;
+    if (!store) {
+      try {
+        const { createSqliteStore } = await import('@zapo-js/store-sqlite');
+        store = createStore({
+          backends: {
+            sqlite: createSqliteStore({ path: join(VOIP_SESSION_DIR, 'state.sqlite') })
+          },
+          providers: {
+            auth: 'sqlite',
+            signal: 'sqlite',
+            preKey: 'sqlite',
+            session: 'sqlite',
+            identity: 'sqlite',
+            senderKey: 'sqlite',
+            appState: 'sqlite',
+            privacyToken: 'sqlite',
+            messages: 'none',
+            threads: 'none',
+            contacts: 'none'
+          }
+        });
+        console.log('📦 [VOIP] تم تفعيل مخزن SQLite بنجاح');
+      } catch (err) {
+        console.warn('ℹ️ [VOIP] تعذر تفعيل SQLite، جاري الاعتماد على المخزن المدمج فائق السرعة:', err.message);
+        store = createStore();
       }
-    });
+    }
 
     const logger = createNoopLogger();
 
