@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, watch } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
@@ -6,8 +6,8 @@ if (!globalThis.WebSocket) {
   globalThis.WebSocket = WebSocket;
 }
 
-
 import { WaClient, createStore, createNoopLogger, ConsoleLogger } from 'zapo-js';
+import { createSqliteStore } from '@zapo-js/store-sqlite';
 import { voipPlugin } from '@zapo-js/voip';
 import { GeminiLiveSession } from './gemini-live.js';
 import { config, CONTACTS } from '../config.js';
@@ -26,6 +26,75 @@ let pairingCodeRequestedAt = 0;
 let latestVoipQr = null;
 let voipQrTimestamp = 0;
 let qrRefreshLock = null;
+let voipSyncTimer = null;
+let voipWatcherInitialized = false;
+
+/**
+ * تأجيل ومزامنة ملفات الجلسة مع قاعدة البيانات بدون إرهاق السيرفر
+ */
+export function scheduleVoipSessionSync(delayMs = 2500) {
+  if (voipSyncTimer) clearTimeout(voipSyncTimer);
+  voipSyncTimer = setTimeout(() => {
+    voipSyncTimer = null;
+    syncVoipSessionToDb().catch(() => {});
+  }, delayMs);
+}
+
+/**
+ * مراقبة التغييرات على مجلد الجلسة للحفظ التلقائي الفوري
+ */
+function setupVoipDirWatcher() {
+  if (voipWatcherInitialized) return;
+  try {
+    mkdirSync(VOIP_SESSION_DIR, { recursive: true });
+    watch(VOIP_SESSION_DIR, (eventType, filename) => {
+      scheduleVoipSessionSync(2000);
+    });
+    voipWatcherInitialized = true;
+  } catch (err) {
+    console.warn('⚠️ [VOIP] تعذر تفعيل مراقب مجلد جلسة المكالمات:', err.message);
+  }
+}
+
+/**
+ * بناء مخزن SQLite دائم لجلسة المكالمات
+ */
+function buildVoipStore() {
+  const sqlitePath = join(VOIP_SESSION_DIR, 'voip.sqlite');
+  try {
+    mkdirSync(VOIP_SESSION_DIR, { recursive: true });
+    const sqliteBackend = createSqliteStore({
+      path: sqlitePath,
+      pragmas: { journal_mode: 'DELETE', busy_timeout: 5000 }
+    });
+    return createStore({
+      backends: { sqlite: sqliteBackend },
+      providers: {
+        auth: 'sqlite',
+        signal: 'sqlite',
+        preKey: 'sqlite',
+        session: 'sqlite',
+        identity: 'sqlite',
+        senderKey: 'sqlite',
+        appState: 'sqlite',
+        messages: 'sqlite',
+        threads: 'sqlite',
+        contacts: 'sqlite',
+        privacyToken: 'sqlite'
+      },
+      cacheProviders: {
+        retry: 'sqlite',
+        groupMetadata: 'sqlite',
+        chatMetadata: 'sqlite',
+        deviceList: 'sqlite',
+        messageSecret: 'sqlite'
+      }
+    });
+  } catch (err) {
+    console.warn('⚠️ [VOIP] فشل تهيئة مخزن SQLite للـ VoIP، جاري استخدام الذاكرة:', err.message);
+    return createStore();
+  }
+}
 
 /**
  * استرجاع ملفات جلسة VoIP من قاعدة بيانات PostgreSQL مع دعم الملفات الثنائية (SQLite)
@@ -168,9 +237,10 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
     // استرجاع جلسة VoIP السحابية إن وُجدت
     await restoreVoipSessionFromDb().catch(() => {});
     mkdirSync(VOIP_SESSION_DIR, { recursive: true });
+    setupVoipDirWatcher();
 
     const logger = new ConsoleLogger('warn');
-    const store = customStore || createStore();
+    const store = customStore || buildVoipStore();
     const client = new WaClient(
       {
         store,
@@ -478,6 +548,20 @@ export async function requestPairingCodeNow() {
   }
 }
 
+// حفظ فوري لجلسة المكالمات عند إيقاف السيرفر أو إعادة التشغيل على السحابة
+for (const sig of ['SIGTERM', 'SIGINT', 'beforeExit']) {
+  process.on(sig, () => {
+    syncVoipSessionToDb().catch(() => {});
+  });
+}
+
+// مزامنة دورية كل 30 ثانية في الخلفية لضمان عدم ضياع أي مفاتيح تشفير جديدة
+setInterval(() => {
+  if (isZapoReady()) {
+    syncVoipSessionToDb().catch(() => {});
+  }
+}, 30000);
+
 // بدء تشغيل محرك Zapo تلقائياً في الخلفية فور إقلاع السيرفر
 setTimeout(() => {
   if (!currentZapoClient) {
@@ -520,5 +604,7 @@ export default {
   getLatestVoipQr,
   getOrRefreshVoipQr,
   getVoipStatus,
+  syncVoipSessionToDb,
+  scheduleVoipSessionSync,
 };
 
