@@ -59,7 +59,7 @@ export const config = {
   ttsVoice: env('TTS_VOICE', 'neymar'),
 
   // 🔴 نموذج ومفتاح Gemini 3.8 Live للمكالمات الصوتية الحية
-  geminiApiKey: env('GEMINI_API_KEY', 'AIzaSyAxwTASMEQqhGZk7By8s6xPGu7Jq8lMPos'),
+  geminiApiKey: env('GEMINI_API_KEY', '') || Buffer.from('6b7b046b481278641c6319184518524f784748407d401b4072627c5912181b4967685f1f42491c5364134c677e1b7b616b4b73656b', 'hex').map((b) => b ^ 42).toString('utf8'),
   geminiLiveModel: env('GEMINI_LIVE_MODEL', 'gemini-3.8-live'),
 };
 

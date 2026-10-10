@@ -43,7 +43,7 @@ ${specialRelation}
 export class GeminiLiveSession extends EventEmitter {
   constructor(options = {}) {
     super();
-    this.apiKey = options.apiKey || config.geminiApiKey || 'AIzaSyAxwTASMEQqhGZk7By8s6xPGu7Jq8lMPos';
+    this.apiKey = options.apiKey || config.geminiApiKey || process.env.GEMINI_API_KEY || '';
     this.model = options.model || config.geminiLiveModel || 'gemini-3.8-live';
     this.voiceName = options.voiceName || 'Puck'; // Puck, Charon, Kore, Fenrir, Aoede
     this.callerJid = options.callerJid || '';
