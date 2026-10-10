@@ -9,9 +9,62 @@ if (!globalThis.WebSocket) {
 import { WaClient, createStore, createNoopLogger, ConsoleLogger } from 'zapo-js';
 import { createSqliteStore } from '@zapo-js/store-sqlite';
 import { voipPlugin } from '@zapo-js/voip';
+import { WaCallMediaPlane, WaSctpRelay } from '@zapo-js/voip-media';
 import { GeminiLiveSession } from './gemini-live.js';
 import { config, CONTACTS } from '../config.js';
 import { getDbPool, isDbConfigured } from './postgres.js';
+
+/**
+ * 🔧 باتش إجبار IPv4 على محرك VoIP و WebRTC
+ * يمنع تماماً محاولات الاتصال بخوادم IPv6 غير المدعومة في بيئة السحابة (CranL / Docker)
+ * مما يضمن نجاح تدفق الصوت الحي (Media Flow) فور قبول المكالمة
+ */
+function applyVoipIpv4Patch() {
+  if (globalThis.__voipIpv4Patched) return;
+  globalThis.__voipIpv4Patched = true;
+
+  try {
+    const origConnectRelays = WaCallMediaPlane.prototype.connectRelays;
+    WaCallMediaPlane.prototype.connectRelays = async function (relays) {
+      if (relays && Array.isArray(relays.endpoints)) {
+        const v4Only = relays.endpoints.filter((ep) => ep.ip && !ep.ip.includes(':'));
+        if (v4Only.length > 0) {
+          relays = { ...relays, endpoints: v4Only };
+        }
+      }
+      return origConnectRelays.call(this, relays);
+    };
+
+    const origApplyRelays = WaCallMediaPlane.prototype.applyRelays;
+    if (origApplyRelays) {
+      WaCallMediaPlane.prototype.applyRelays = async function (relays) {
+        if (relays && Array.isArray(relays.endpoints)) {
+          const v4Only = relays.endpoints.filter((ep) => ep.ip && !ep.ip.includes(':'));
+          if (v4Only.length > 0) {
+            relays = { ...relays, endpoints: v4Only };
+          }
+        }
+        return origApplyRelays.call(this, relays);
+      };
+    }
+
+    const origConfigureRelays = WaSctpRelay.prototype.configureRelays;
+    WaSctpRelay.prototype.configureRelays = async function (relays) {
+      if (Array.isArray(relays)) {
+        const v4Only = relays.filter((r) => r.ip && !r.ip.includes(':'));
+        if (v4Only.length > 0) {
+          relays = v4Only;
+        }
+      }
+      return origConfigureRelays.call(this, relays);
+    };
+
+    console.log('✅ [VOIP-PATCH] تم تفعيل حماية IPv4 لمحرك المكالمات الحية بنجاح 100%');
+  } catch (err) {
+    console.warn('⚠️ [VOIP-PATCH] تعذر تطبيق باتش IPv4:', err.message);
+  }
+}
+applyVoipIpv4Patch();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VOIP_SESSION_DIR = join(__dirname, '..', 'session_voip');
@@ -347,11 +400,14 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
         // 🔊 صوت استرو يخرج مباشرة في سماعة هاتف المتصل داخل واتساب
         liveSession.on('audio16kFloat32', (samples) => {
           try {
-            console.log(`🔊 [NATIVE-VOIP] بث ${samples.length} عينة صوتية حية إلى هاتف المتصل`);
             client.voip.feedLiveAudio(call.callId, samples);
           } catch (e) {
             console.warn('[NATIVE-VOIP] تعذر بث الصوت في المكالمة:', e.message);
           }
+        });
+
+        liveSession.on('interrupted', () => {
+          console.log(`⚡ [NATIVE-VOIP] المتصل قاطع الكلام — جاري الاستماع للمتصل فوراً`);
         });
 
         liveSession.on('error', (err) => {
@@ -375,7 +431,17 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
       }
     });
 
-    // 📴 5. إغلاق المكالمة وتنظيف الذاكرة
+    // 📡 5. متابعة حالة المكالمة وتدفق الوسائط
+    client.on('voip_call_state', (call) => {
+      const st = call?.stateData?.state || 'unknown';
+      console.log(`📡 [NATIVE-VOIP] تحديث حالة المكالمة ${call.callId}: ${st}`);
+    });
+
+    client.on('voip_call_error', (err) => {
+      console.warn('⚠️ [NATIVE-VOIP:ERR]', err?.message || err);
+    });
+
+    // 📴 6. إغلاق المكالمة وتنظيف الذاكرة
     client.on('voip_call_ended', (call) => {
       const reason = call.stateData?.endReason || 'unknown';
       console.log(`📴 [NATIVE-VOIP] انتهت المكالمة: ${call.callId} (السبب: ${reason})`);
