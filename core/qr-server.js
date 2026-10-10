@@ -237,8 +237,8 @@ const PAGE = `<!DOCTYPE html>
       </div>
       <div id="voip-qrbox" style="text-align:center;padding:12px 0;">
         <p style="font-size:14px;color:var(--yellow);margin-bottom:8px;font-weight:700;">⚠️ امسح الباركود التالي بكاميرا واتساب لتفعيل الرد الصوتي المباشر على المكالمات:</p>
-        <div style="background:#fff;border-radius:18px;padding:12px;margin:12px auto;display:inline-block;box-shadow:0 0 35px rgba(0,255,163,0.3);">
-          <img id="voip-qr-img" src="/api/voip/qr.png" alt="باركود مكالمات واتساب" style="width:260px;height:260px;display:block;border-radius:10px;">
+        <div style="background:#ffffff;border-radius:18px;padding:16px;margin:14px auto;display:inline-block;box-shadow:0 10px 30px rgba(0,0,0,0.4);">
+          <img id="voip-qr-img" src="/api/voip/qr.png" alt="باركود مكالمات واتساب" style="width:280px;height:280px;display:block;border-radius:4px;image-rendering:pixelated;">
         </div>
         <p style="font-size:13px;color:var(--text);margin-top:6px;">📲 <b>الخطوات:</b> افتح واتساب ➔ الأجهزة المرتبطة ➔ ربط جهاز ➔ وجّه الكاميرا للباركود</p>
         <p style="font-size:12px;color:var(--neon);margin-top:4px;">🔄 يتجدد الباركود تلقائياً كل ثوانٍ ومستمر بالعمل دون توقف</p>
@@ -494,14 +494,14 @@ const VOIP_PAGE = `<!DOCTYPE html>
   h1 { font-size: 22px; font-weight: 900; background: linear-gradient(135deg, var(--neon), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
   .badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; background: rgba(0,255,163,0.12); color: var(--neon); border: 1px solid rgba(0,255,163,0.3); margin-bottom: 20px; }
   .qr-wrapper {
-    background: #fff;
-    border-radius: 20px;
-    padding: 14px;
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 16px;
     display: inline-block;
-    box-shadow: 0 0 35px rgba(0, 255, 163, 0.25);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     margin-bottom: 16px;
   }
-  .qr-img { width: 280px; height: 280px; display: block; border-radius: 12px; }
+  .qr-img { width: 280px; height: 280px; display: block; border-radius: 4px; image-rendering: pixelated; }
   .instructions { text-align: right; background: rgba(0,0,0,0.3); border-radius: 14px; padding: 16px; margin-top: 14px; font-size: 13px; line-height: 1.8; border: 1px solid rgba(255,255,255,0.06); }
   .instructions ol { padding-right: 20px; color: #cbd5e1; }
   .instructions li { margin-bottom: 4px; }
@@ -697,17 +697,24 @@ export function startQrServer(port = 3000) {
             }
           }
           if (!qr) {
-            // توليد صورة PNG حقيقية بباركود تحميل مؤقت بدلاً من SVG لمنع كسر الصورة في المتصفح
-            const buf = await QRCode.toBuffer('https://nova-bot-x3unfm.cranl.net/voip-qr?init=1', {
-              width: 380,
-              margin: 2,
-              color: { dark: '#00ffa3', light: '#070b10' }
+            // صورة باركود بيضاء نقية 100% طبيعية متوافقة تماماً
+            const buf = await QRCode.toBuffer('https://nova-bot-x3unfm.cranl.net/voip-qr', {
+              width: 400,
+              margin: 4,
+              color: { dark: '#000000', light: '#ffffff' },
+              errorCorrectionLevel: 'M'
             });
             res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
             res.end(buf);
             return;
           }
-          const buf = await QRCode.toBuffer(qr, { width: 380, margin: 2, color: { dark: '#000000', light: '#ffffff' } });
+          // باركود طبيعي رسمي 100% (أسود على أبيض ناصع) متوافق تماماً مع كاميرا تطبيق واتساب
+          const buf = await QRCode.toBuffer(qr, {
+            width: 400,
+            margin: 4,
+            color: { dark: '#000000', light: '#ffffff' },
+            errorCorrectionLevel: 'M'
+          });
           res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
           res.end(buf);
         } catch (err) {
