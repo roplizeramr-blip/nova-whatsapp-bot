@@ -162,12 +162,15 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
     await restoreVoipSessionFromDb().catch(() => {});
     mkdirSync(VOIP_SESSION_DIR, { recursive: true });
 
-    // إعداد مخزن الجلسة لـ Zapo (مع دعم احتياطي تلقائي)
+    const logger = createNoopLogger();
+    let client = null;
     let store = customStore;
+
+    // 1. محاولة تهيئة مخزن SQLite مع معالجة أي استثناء داخلي
     if (!store) {
       try {
         const { createSqliteStore } = await import('@zapo-js/store-sqlite');
-        store = createStore({
+        const sqliteStore = createStore({
           backends: {
             sqlite: createSqliteStore({ path: join(VOIP_SESSION_DIR, 'state.sqlite') })
           },
@@ -185,32 +188,53 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
             contacts: 'none'
           }
         });
+
+        client = new WaClient(
+          {
+            store: sqliteStore,
+            sessionId: 'voip',
+            connectTimeoutMs: 30000,
+            deviceBrowser: 'Chrome',
+            deviceOsDisplayName: 'Windows',
+            plugins: [
+              voipPlugin({
+                maxConcurrentCalls: 1,
+                logLevel: 'warn',
+                useOriginalRelayPort: true
+              })
+            ]
+          },
+          logger
+        );
         console.log('📦 [VOIP] تم تفعيل مخزن SQLite بنجاح');
       } catch (err) {
         console.warn('ℹ️ [VOIP] تعذر تفعيل SQLite، جاري الاعتماد على المخزن المدمج فائق السرعة:', err.message);
-        store = createStore();
+        client = null;
       }
     }
 
-    const logger = createNoopLogger();
-
-    const client = new WaClient(
-      {
-        store,
-        sessionId: 'voip',
-        connectTimeoutMs: 30000,
-        deviceBrowser: 'Chrome',
-        deviceOsDisplayName: 'Windows',
-        plugins: [
-          voipPlugin({
-            maxConcurrentCalls: 1,
-            logLevel: 'warn',
-            useOriginalRelayPort: true
-          })
-        ]
-      },
-      logger
-    );
+    // 2. إذا فشل SQLite أو لم يكن متاحاً، يتم تشغيل المخزن الداخلي 100% بنجاح فوري
+    if (!client) {
+      store = createStore();
+      client = new WaClient(
+        {
+          store,
+          sessionId: 'voip',
+          connectTimeoutMs: 30000,
+          deviceBrowser: 'Chrome',
+          deviceOsDisplayName: 'Windows',
+          plugins: [
+            voipPlugin({
+              maxConcurrentCalls: 1,
+              logLevel: 'warn',
+              useOriginalRelayPort: true
+            })
+          ]
+        },
+        logger
+      );
+      console.log('⚡ [VOIP] تم تفعيل محرك المكالمات بالمخزن المدمج فائق السرعة بنجاح');
+    }
 
     currentZapoClient = client;
 

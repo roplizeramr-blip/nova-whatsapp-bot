@@ -371,7 +371,11 @@ async function tick() {
         if (vQrBox) vQrBox.style.display = 'block';
         if (vConnBox) vConnBox.style.display = 'none';
         if (vImg) {
-          vImg.src = '/api/voip/qr.png?t=' + Date.now();
+          const ts = String(vData.qrTimestamp || 0);
+          if (vImg.getAttribute('data-ts') !== ts) {
+            vImg.setAttribute('data-ts', ts);
+            vImg.src = '/api/voip/qr.png?t=' + (vData.qrTimestamp || Date.now());
+          }
         }
       }
     } catch (_) {}
@@ -549,7 +553,13 @@ const VOIP_PAGE = `<!DOCTYPE html>
         }
       } else {
         const img = document.getElementById('qr-img');
-        if (img) img.src = '/api/voip/qr.png?t=' + Date.now();
+        if (img) {
+          const ts = String(data.qrTimestamp || 0);
+          if (img.getAttribute('data-ts') !== ts) {
+            img.setAttribute('data-ts', ts);
+            img.src = '/api/voip/qr.png?t=' + (data.qrTimestamp || Date.now());
+          }
+        }
       }
     } catch (_) {}
   }
@@ -687,16 +697,17 @@ export function startQrServer(port = 3000) {
             }
           }
           if (!qr) {
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
-              <rect width="100%" height="100%" fill="#0e1721" rx="16"/>
-              <text x="50%" y="45%" text-anchor="middle" fill="#00ffa3" font-family="sans-serif" font-size="16" font-weight="bold">⚡ جاري توليد الباركود...</text>
-              <text x="50%" y="60%" text-anchor="middle" fill="#8b949e" font-family="sans-serif" font-size="12">انتظر ثوانٍ معدودة</text>
-            </svg>`;
-            res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
-            res.end(svg);
+            // توليد صورة PNG حقيقية بباركود تحميل مؤقت بدلاً من SVG لمنع كسر الصورة في المتصفح
+            const buf = await QRCode.toBuffer('https://nova-bot-x3unfm.cranl.net/voip-qr?init=1', {
+              width: 380,
+              margin: 2,
+              color: { dark: '#00ffa3', light: '#070b10' }
+            });
+            res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+            res.end(buf);
             return;
           }
-          const buf = await QRCode.toBuffer(qr, { width: 380, margin: 2 });
+          const buf = await QRCode.toBuffer(qr, { width: 380, margin: 2, color: { dark: '#000000', light: '#ffffff' } });
           res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
           res.end(buf);
         } catch (err) {
