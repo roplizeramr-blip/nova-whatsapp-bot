@@ -229,6 +229,30 @@ const PAGE = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- 📞 Live VoIP Voice Calls Panel (Gemini 3.8 Live) -->
+    <div class="panel" id="voip-panel" style="grid-column: 1 / -1;">
+      <div class="panel-header">
+        <div class="panel-title">📞 جهاز مكالمات واتساب الصوتية الحية (Gemini 3.8 Live VoIP)</div>
+        <span class="badge" id="voip-status-badge">جاري الفحص...</span>
+      </div>
+      <div id="voip-qrbox" style="text-align:center;padding:12px 0;">
+        <p style="font-size:14px;color:var(--yellow);margin-bottom:8px;font-weight:700;">⚠️ امسح الباركود التالي بكاميرا واتساب لتفعيل الرد الصوتي المباشر على المكالمات:</p>
+        <div style="background:#fff;border-radius:18px;padding:12px;margin:12px auto;display:inline-block;box-shadow:0 0 35px rgba(0,255,163,0.3);">
+          <img id="voip-qr-img" src="/api/voip/qr.png" alt="باركود مكالمات واتساب" style="width:260px;height:260px;display:block;border-radius:10px;">
+        </div>
+        <p style="font-size:13px;color:var(--text);margin-top:6px;">📲 <b>الخطوات:</b> افتح واتساب ➔ الأجهزة المرتبطة ➔ ربط جهاز ➔ وجّه الكاميرا للباركود</p>
+        <p style="font-size:12px;color:var(--neon);margin-top:4px;">🔄 يتجدد الباركود تلقائياً كل ثوانٍ ومستمر بالعمل دون توقف</p>
+        <div style="margin-top:10px;">
+          <a href="/voip-qr" target="_blank" class="btn-action" style="font-size:13px;padding:8px 16px;">🔍 فتح شاشة الباركود المكبرة المنفصلة</a>
+        </div>
+      </div>
+      <div id="voip-connected-box" style="display:none;text-align:center;padding:26px 10px;">
+        <div style="font-size:48px;margin-bottom:10px;">🎙️🟢</div>
+        <h3 style="color:var(--neon);font-size:20px;margin-bottom:6px;">جهاز المكالمات الصوتية الحية مقترن ونشط 100%!</h3>
+        <p style="font-size:14px;color:var(--text)">أسترو جاهز الآن للرد على أي رنة تليفون في واتساب والتحدث مباشرة بصوت مصري ذكي بنموذج Gemini 3.8 Live.</p>
+      </div>
+    </div>
+
   </div>
 
   <!-- AI Playground + People -->
@@ -321,6 +345,37 @@ async function tick() {
       document.getElementById('qr-img').src = '/qr.png?t=' + Date.now();
     }
 
+    // 📞 VoIP Live Status & QR Auto-Refresh
+    try {
+      const vRes = await fetch('/api/voip/status');
+      const vData = await vRes.json();
+      const vBadge = document.getElementById('voip-status-badge');
+      const vQrBox = document.getElementById('voip-qrbox');
+      const vConnBox = document.getElementById('voip-connected-box');
+      const vImg = document.getElementById('voip-qr-img');
+
+      if (vData.ready) {
+        if (vBadge) {
+          vBadge.className = 'badge badge-live';
+          vBadge.textContent = '🟢 نشط ومقترن 100%';
+        }
+        if (vQrBox) vQrBox.style.display = 'none';
+        if (vConnBox) vConnBox.style.display = 'block';
+      } else {
+        if (vBadge) {
+          vBadge.className = 'badge';
+          vBadge.style.background = 'rgba(255,184,0,0.15)';
+          vBadge.style.color = 'var(--yellow)';
+          vBadge.textContent = '🟡 بانتظار مسح الباركود';
+        }
+        if (vQrBox) vQrBox.style.display = 'block';
+        if (vConnBox) vConnBox.style.display = 'none';
+        if (vImg) {
+          vImg.src = '/api/voip/qr.png?t=' + Date.now();
+        }
+      }
+    } catch (_) {}
+
     // People
     const pList = document.getElementById('people-list');
     pList.innerHTML = (d.people || []).map(p =>
@@ -388,6 +443,118 @@ document.getElementById('playground-input').addEventListener('keydown', (e) => {
 
 setInterval(tick, 3000);
 tick();
+</script>
+</body>
+</html>`;
+
+const VOIP_PAGE = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ربط مكالمات واتساب الصوتية الحية ⚡ ASTRO AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #070b10;
+    --card: rgba(14, 23, 33, 0.88);
+    --neon: #00ffa3;
+    --cyan: #00d4ff;
+    --yellow: #ffb800;
+    --text: #e6edf3;
+    --muted: #8b949e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 50% 20%, #102334 0%, var(--bg) 80%);
+    color: var(--text);
+    font-family: 'Cairo', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid rgba(0, 255, 163, 0.25);
+    backdrop-filter: blur(16px);
+    border-radius: 24px;
+    padding: 32px 24px;
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  }
+  h1 { font-size: 22px; font-weight: 900; background: linear-gradient(135deg, var(--neon), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
+  .badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; background: rgba(0,255,163,0.12); color: var(--neon); border: 1px solid rgba(0,255,163,0.3); margin-bottom: 20px; }
+  .qr-wrapper {
+    background: #fff;
+    border-radius: 20px;
+    padding: 14px;
+    display: inline-block;
+    box-shadow: 0 0 35px rgba(0, 255, 163, 0.25);
+    margin-bottom: 16px;
+  }
+  .qr-img { width: 280px; height: 280px; display: block; border-radius: 12px; }
+  .instructions { text-align: right; background: rgba(0,0,0,0.3); border-radius: 14px; padding: 16px; margin-top: 14px; font-size: 13px; line-height: 1.8; border: 1px solid rgba(255,255,255,0.06); }
+  .instructions ol { padding-right: 20px; color: #cbd5e1; }
+  .instructions li { margin-bottom: 4px; }
+  .success-box { display: none; padding: 30px 10px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>📞 مكالمات واتساب الصوتية الحية</h1>
+  <div class="badge" id="status-badge">🔄 الباركود نشط ويتجدد تلقائياً</div>
+  
+  <div id="qr-section">
+    <div class="qr-wrapper">
+      <img id="qr-img" class="qr-img" src="/api/voip/qr.png" alt="VoIP QR">
+    </div>
+    <p style="font-size: 12px; color: var(--neon); margin-bottom: 12px;">🔄 يتجدد الباركود تلقائياً بدون الحاجة لتحديث الصفحة</p>
+    
+    <div class="instructions">
+      <strong style="color:var(--neon);display:block;margin-bottom:6px;">📲 خطوات الربط في ثوانٍ:</strong>
+      <ol>
+        <li>افتح تطبيق <b>واتساب</b> على هاتفك 📱</li>
+        <li>ادخل على <b>الأجهزة المرتبطة</b> (<i>Linked Devices</i>)</li>
+        <li>اضغط على <b>ربط جهاز</b> (<i>Link a Device</i>)</li>
+        <li>وجّه كاميرا الهاتف إلى الباركود أعلاه مباشرة!</li>
+      </ol>
+    </div>
+  </div>
+
+  <div id="success-section" class="success-box">
+    <div style="font-size: 64px; margin-bottom: 12px;">🎉🎙️</div>
+    <h2 style="color:var(--neon);font-size:22px;margin-bottom:8px;">تم الربط بنجاح 100%!</h2>
+    <p style="color:var(--text);font-size:14px;line-height:1.6;">جهاز المكالمات الصوتية مقترن الآن بنظام الأجهزة المتعددة.<br>أسترو جاهز للرد على أي مكالمة صوتية والتحدث مباشرة عبر الذكاء الاصطناعي!</p>
+  </div>
+</div>
+
+<script>
+  let isPaired = false;
+  async function check() {
+    try {
+      const res = await fetch('/api/voip/status');
+      const data = await res.json();
+      if (data.ready) {
+        if (!isPaired) {
+          isPaired = true;
+          document.getElementById('qr-section').style.display = 'none';
+          document.getElementById('success-section').style.display = 'block';
+          document.getElementById('status-badge').textContent = '🟢 متصل ونشط 100%';
+          document.getElementById('status-badge').style.borderColor = 'var(--neon)';
+        }
+      } else {
+        const img = document.getElementById('qr-img');
+        if (img) img.src = '/api/voip/qr.png?t=' + Date.now();
+      }
+    } catch (_) {}
+  }
+  setInterval(check, 3000);
+  check();
 </script>
 </body>
 </html>`;
@@ -489,6 +656,57 @@ export function startQrServer(port = 3000) {
         const qr = readQr();
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify({ qr, ascii: qr ? asciiQr(qr) : '' }));
+        return;
+      }
+
+      // 📞 صفحة مسح باركود مكالمات واتساب الصوتية الحية المنفصلة
+      if (req.url === '/voip-qr' || req.url === '/voip/qr') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(VOIP_PAGE);
+        return;
+      }
+
+      // 📞 صورة باركود المكالمات الصوتية الحية (Live VoIP QR PNG)
+      if (req.url.startsWith('/api/voip/qr.png') || req.url === '/voip.png') {
+        try {
+          const { getLatestVoipQr, isZapoReady } = await import('./zapo-engine.js');
+          if (isZapoReady()) {
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+          const qr = getLatestVoipQr();
+          if (!qr) {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+              <rect width="100%" height="100%" fill="#0e1721" rx="16"/>
+              <text x="50%" y="45%" text-anchor="middle" fill="#00ffa3" font-family="sans-serif" font-size="16" font-weight="bold">⚡ جاري توليد الباركود...</text>
+              <text x="50%" y="60%" text-anchor="middle" fill="#8b949e" font-family="sans-serif" font-size="12">انتظر ثوانٍ معدودة</text>
+            </svg>`;
+            res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
+            res.end(svg);
+            return;
+          }
+          const buf = await QRCode.toBuffer(qr, { width: 380, margin: 2 });
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+          res.end(buf);
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end(err.message);
+        }
+        return;
+      }
+
+      // 📞 فحص حالة جهاز المكالمات الصوتية الحية (VoIP Live Status)
+      if (req.url.startsWith('/api/voip/status')) {
+        try {
+          const { getVoipStatus } = await import('./zapo-engine.js');
+          const status = getVoipStatus();
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify(status));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
         return;
       }
 

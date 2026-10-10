@@ -17,6 +17,8 @@ let zapoConnecting = false;
 let zapoPaired = false;
 let latestPairingCode = null;
 let pairingCodeRequestedAt = 0;
+let latestVoipQr = null;
+let voipQrTimestamp = 0;
 
 /**
  * استرجاع ملفات جلسة VoIP من قاعدة بيانات PostgreSQL مع دعم الملفات الثنائية (SQLite)
@@ -239,13 +241,22 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
       }
     };
 
-    // 🔢 1. طلب كود الربط عند ظهور حدث auth_qr أو auth_pairing_required
-    client.on('auth_qr', handlePairingFlow);
-    client.on('auth_pairing_required', handlePairingFlow);
+    // 🔢 1. استلام باركود الربط المباشر (QR Code) عند ظهور حدث auth_qr
+    client.on('auth_qr', ({ qr, ttlMs }) => {
+      latestVoipQr = qr;
+      voipQrTimestamp = Date.now();
+      console.log(`⚡ [NATIVE-VOIP] تم استلام باركود جديد لمكالمات واتساب (TTL: ${ttlMs || 60000}ms)`);
+    });
+
+    client.on('auth_pairing_required', () => {
+      console.log('ℹ️ [NATIVE-VOIP] السيرفر جاهز لربط جهاز المكالمات');
+    });
 
     // 🎉 2. عند اكتمال الربط بنجاح
     client.on('auth_paired', async () => {
       zapoPaired = true;
+      latestVoipQr = null;
+      latestPairingCode = null;
       console.log('🎉 [NATIVE-VOIP] تم ربط جهاز المكالمات الصوتية بنجاح بنظام الأجهزة المتعددة!');
       await syncVoipSessionToDb().catch(() => {});
 
@@ -412,10 +423,25 @@ export function getZapoClient() {
   return currentZapoClient;
 }
 
+export function getLatestVoipQr() {
+  return latestVoipQr;
+}
+
+export function getVoipStatus() {
+  return {
+    ready: isZapoReady(),
+    hasQr: !!latestVoipQr,
+    qrTimestamp: voipQrTimestamp,
+    latestPairingCode,
+  };
+}
+
 export default {
   startZapoVoipEngine,
   getZapoClient,
   isZapoReady,
   getLatestPairingCode,
-  requestPairingCodeNow
+  requestPairingCodeNow,
+  getLatestVoipQr,
+  getVoipStatus,
 };
