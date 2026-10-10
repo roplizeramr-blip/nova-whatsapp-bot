@@ -252,8 +252,7 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
         plugins: [
           voipPlugin({
             maxConcurrentCalls: 1,
-            logLevel: 'warn',
-            useRawUdpTransport: true
+            logLevel: 'warn'
           })
         ]
       },
