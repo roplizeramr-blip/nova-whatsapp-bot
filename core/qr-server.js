@@ -669,13 +669,23 @@ export function startQrServer(port = 3000) {
       // 📞 صورة باركود المكالمات الصوتية الحية (Live VoIP QR PNG)
       if (req.url.startsWith('/api/voip/qr.png') || req.url === '/voip.png') {
         try {
-          const { getLatestVoipQr, isZapoReady } = await import('./zapo-engine.js');
+          const { getLatestVoipQr, isZapoReady, startZapoVoipEngine, getZapoClient } = await import('./zapo-engine.js');
           if (isZapoReady()) {
             res.writeHead(204);
             res.end();
             return;
           }
-          const qr = getLatestVoipQr();
+          if (!getZapoClient()) {
+            startZapoVoipEngine().catch(() => {});
+          }
+          let qr = getLatestVoipQr();
+          if (!qr) {
+            for (let i = 0; i < 8; i++) {
+              await new Promise((r) => setTimeout(r, 500));
+              qr = getLatestVoipQr();
+              if (qr) break;
+            }
+          }
           if (!qr) {
             const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
               <rect width="100%" height="100%" fill="#0e1721" rx="16"/>

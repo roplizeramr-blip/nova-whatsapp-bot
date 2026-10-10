@@ -428,6 +428,9 @@ export function getLatestVoipQr() {
 }
 
 export function getVoipStatus() {
+  if (!currentZapoClient && !zapoConnecting) {
+    startZapoVoipEngine().catch(() => {});
+  }
   return {
     ready: isZapoReady(),
     hasQr: !!latestVoipQr,
