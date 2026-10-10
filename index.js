@@ -1,3 +1,8 @@
+import WebSocket from 'ws';
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = WebSocket;
+}
+
 import { startBot } from './core/connection.js';
 import { startQrServer } from './core/qr-server.js';
 import { config } from './config.js';

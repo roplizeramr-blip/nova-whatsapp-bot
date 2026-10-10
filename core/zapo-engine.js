@@ -1,6 +1,12 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import WebSocket from 'ws';
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = WebSocket;
+}
+
+
 import { WaClient, createStore, createNoopLogger, ConsoleLogger } from 'zapo-js';
 import { voipPlugin } from '@zapo-js/voip';
 import { GeminiLiveSession } from './gemini-live.js';
