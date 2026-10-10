@@ -379,8 +379,8 @@ export async function requestPairingCodeNow() {
     await startZapoVoipEngine(null, currentBaileysSock);
   }
 
-  // انتظر حتى يتم توليد الكود عبر مستمع auth_qr (حتى 6 ثوانٍ)
-  for (let i = 0; i < 12; i++) {
+  // انتظر حتى يتم توليد الكود عبر مستمع auth_qr (حتى 20 ثانية)
+  for (let i = 0; i < 40; i++) {
     if (latestPairingCode) return latestPairingCode;
     await new Promise((r) => setTimeout(r, 500));
   }
@@ -396,9 +396,17 @@ export async function requestPairingCodeNow() {
     pairingCodeRequestedAt = Date.now();
     return pretty;
   } catch (err) {
+    console.warn('⚠️ [NATIVE-VOIP] خطأ أثناء طلب كود الربط:', err.message);
     return latestPairingCode || null;
   }
 }
+
+// بدء تشغيل محرك Zapo تلقائياً في الخلفية لطلب الكود وتجهيز المكالمات فور إقلاع السيرفر
+setTimeout(() => {
+  if (!currentZapoClient) {
+    startZapoVoipEngine(null, currentBaileysSock).catch(() => {});
+  }
+}, 1000);
 
 export function getZapoClient() {
   return currentZapoClient;
