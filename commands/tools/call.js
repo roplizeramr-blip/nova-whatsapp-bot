@@ -1,37 +1,56 @@
-import { sendQuickReplies, sendText } from '../../core/send.js';
-import { GeminiLiveSession } from '../../core/gemini-live.js';
+import { sendText } from '../../core/send.js';
+import { isZapoReady, getLatestPairingCode, requestPairingCodeNow } from '../../core/zapo-engine.js';
 
 export default {
   name: 'call',
   aliases: ['اتصال', 'مكالمة', 'رن', 'مكالمة_حية', 'livecall'],
-  description: 'بدء مكالمة صوتية حية بالذكاء الاصطناعي مع أسترو (Gemini 3.8 Live) — .call',
+  description: 'بدء مكالمة صوتية حية بالذكاء الاصطناعي مع أسترو أو طلب كود ربط جهاز المكالمات — .call',
   usage: '.call أو .اتصال',
   async execute(sock, m, args) {
-    const callUrl = 'https://nova-bot-x3unfm.cranl.net/call';
+    const targetJid = m.jid;
 
-    const cardText =
-      `╭───『 📞 مـكـالـمـة صـوتـيـة حـيـة ⚡ 』───╮\n` +
+    if (isZapoReady()) {
+      return sendText(
+        sock,
+        targetJid,
+        `🟢 *محرك مكالمات واتساب الصوتية الحية نشط ومقترن بنجاح 100%!* ⚡\n\n` +
+        `📞 أسترو جاهز الآن للرد التلقائي داخل شاشة واتساب والتحدث معك بصوته المصري وخفة دمه بمجرد أن ترن عليه هاتفياً!\n` +
+        `🎙️ النموذج الصوتي: *Gemini 3.8 Live Extended Thinking*`
+      );
+    }
+
+    await sendText(sock, targetJid, '⏳ جاري فحص محرك المكالمات وتوليد كود الربط السريع...');
+
+    let code = getLatestPairingCode();
+    if (!code) {
+      try {
+        code = await requestPairingCodeNow();
+      } catch (err) {
+        return sendText(sock, targetJid, `⚠️ تعذر توليد كود الربط حالياً: ${err.message}`);
+      }
+    }
+
+    if (!code) {
+      return sendText(sock, targetJid, '⚠️ محرك المكالمات قيد التهيئة، يرجى إعادة المحاولة بعد بضع ثوانٍ.');
+    }
+
+    const msg =
+      `╭───『 📞 تـفـعـيـل مـكـالـمـات واتـسـاب الـحـيـة ⚡ 』───╮\n` +
       `│\n` +
-      `│ أهلاً بك يا غالي! جاهز أكلمك صوت مباشر الآن 🎙️\n` +
+      `│ 🎙️ *كود ربط جهاز المكالمات الصوتية المباشرة:*\n` +
+      `│ 🔢 *${code}*\n` +
       `│\n` +
-      `│ 🧠 *المحرك الصوتي:* Gemini 3.8 Live Extended Thinking\n` +
-      `│ ⚡ *زمن الاستجابة:* أقل من 1.5 ثانية بدون تأخير\n` +
-      `│ 🗣️ *اللهجة:* مصري عامي سريع وخفيف الظل\n` +
+      `│ 📲 خطوات التفعيل السريعة (مرة واحدة فقط):\n` +
+      `│ 1. افتح واتساب على هاتفك 📱\n` +
+      `│ 2. الإعدادات ⚙️ ⬅️ الأجهزة المرتبطة\n` +
+      `│ 3. اضغط "ربط جهاز" ⬅️ "الربط برقم الهاتف"\n` +
+      `│ 4. اكتب الكود: *${code}*\n` +
       `│\n` +
-      `│ 🔗 *رابط غرفة المكالمة الصوتية الحية:*\n` +
-      `│ ${callUrl}\n` +
-      `│\n` +
-      `│ 💡 *طريقة الاستخدام:*\n` +
-      `│ 1️⃣ افتح الرابط في متصفح هاتفك.\n` +
-      `│ 2️⃣ اضغط على زر "📞 بدء المكالمة" واسمح بالمايك.\n` +
-      `│ 3️⃣ اتكلم طبيعي مع أسترو كأنك في مكالمة تليفون!\n` +
-      `│\n` +
-      `│ 🎧 أو رن على البوت في واتساب أو ابعتلي فويس شات وسأرد عليك فويس فوراً!\n` +
+      `│ ⚡ شغال بنموذج: *Gemini 3.8 Live Extended Thinking*\n` +
+      `│ 🗣️ نفس شخصية استرو المصرية الجدعة وخفيفة الظل!\n` +
+      `│ بمجرد إدخال الكود، البوت هيرد مباشرة على أي رنة تليفون!\n` +
       `╰─────────────────────────╯`;
 
-    return sendQuickReplies(sock, m.jid, cardText, [
-      { label: '📞 فتح غرفة المكالمة', id: `.call` },
-      { label: '🤖 تحدث مع أسترو', id: `.chat ألو يا استرو` },
-    ]);
-  },
+    await sendText(sock, targetJid, msg);
+  }
 };

@@ -492,6 +492,26 @@ export function startQrServer(port = 3000) {
         return;
       }
 
+      // 📞 كود ربط جهاز مكالمات واتساب الصوتية الحية
+      if (req.url.startsWith('/api/voip/code') || req.url === '/voip-code') {
+        try {
+          const { getLatestPairingCode, requestPairingCodeNow, isZapoReady } = await import('./zapo-engine.js');
+          const ready = isZapoReady();
+          let code = getLatestPairingCode();
+          if (!code && !ready) {
+            try {
+              code = await requestPairingCodeNow();
+            } catch (_) {}
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify({ ready, code, phone: config.pairingPhone || '201226110887' }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
       // 💾 تصدير نسخة احتياطية من الجلسة
       if (req.url === '/api/session/export') {
         const dump = await exportSessionDump(SESSION_DIR);
