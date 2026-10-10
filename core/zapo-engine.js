@@ -214,14 +214,12 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
 
     // معالج طلب كود الربط عند الحاجة
     const handlePairingFlow = async () => {
-      if (Date.now() - pairingCodeRequestedAt < 15000) return;
-      pairingCodeRequestedAt = Date.now();
-
       const state = client.auth?.getState();
       if (state?.registered) {
         zapoPaired = true;
         return;
       }
+      if (latestPairingCode) return;
 
       console.log('\n======================================================');
       console.log('🔢 [NATIVE-VOIP] جاري طلب كود تفعيل المكالمات الصوتية المباشرة...');
@@ -230,6 +228,7 @@ export async function startZapoVoipEngine(customStore = null, baileysSock = null
         const rawCode = await client.auth.requestPairingCode(phone);
         const prettyCode = rawCode?.match(/.{1,4}/g)?.join('-') ?? rawCode;
         latestPairingCode = prettyCode;
+        pairingCodeRequestedAt = Date.now();
 
         console.log(`📞 [NATIVE-VOIP] كود تفعيل المكالمات الصوتية الحية: ${prettyCode}`);
         console.log('======================================================\n');
