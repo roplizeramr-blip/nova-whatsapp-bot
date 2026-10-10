@@ -27,14 +27,14 @@ export function emotiveVoiceText(text) {
 }
 
 // 🎙️ طبقة الصوت الذكية — رسالة صوتية ناطقة بلهجة عربية ومصرية واقعية وطبيعية
-// الصوت الافتراضي الأساسي: نيمار (neymar - سريع وحماسي وطبيعي)
+// الصوت الافتراضي الأساسي: أنطوني (antoni - صوت رجل رقيق وناعم)
 export async function speak(sock, jid, text, { voice = null } = {}) {
   const clean = emotiveVoiceText(text);
   if (!clean) throw new Error('مفيش كلام');
 
-  // فحص الصوت المخصص للشات أو الإعدادات العامة (الافتراضي نيمار)
+  // فحص الصوت المخصص للشات أو الإعدادات العامة (الافتراضي أنطوني)
   const chatVoice = jid ? (db.get('chatVoice', {})[jid] ?? null) : null;
-  const rawRequested = voice ?? chatVoice ?? config.ttsVoice ?? 'neymar';
+  const rawRequested = voice ?? chatVoice ?? config.ttsVoice ?? 'antoni';
   const selectedVoice = VOICES[rawRequested] ?? rawRequested;
 
   // 1. الأساسي: VEX ElevenLabs / VoxBox (استجابة فائقة في ~1.2 ثانية وطبيعية 100%)

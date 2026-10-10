@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { config, CONTACTS } from '../config.js';
 import { buildAstroCallPrompt } from './gemini-live.js';
+import api from './api.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GREETING_WAV = join(__dirname, '..', 'data', 'call_greeting.wav');
@@ -127,20 +128,52 @@ export async function transcribeAudio(wavBuffer) {
 }
 
 /**
- * توليد رد أسترو الهاتفي المصري السريع عبر Groq LLM
+ * توليد رد أسترو الهاتفي المصري عبر نموذج Google Gemini السريع
+ * مع دعم جلسات التحدث متعددة الجولات والاحتياطي الذكي
  */
-export async function generateReply(history, callerJid = '', callerName = '') {
-  const keys = config.groqApiKeys || [];
-  if (!keys.length) return 'أهلاً يا غالي سامعك تمام قول لي إيه الأخبار';
-
+export async function generateReply(history, callerJid = '', callerName = '', session = null) {
+  const lastUserMsg = history.filter((m) => m.role === 'user').pop()?.content || 'ألو يا أسترو';
   const basePrompt = buildAstroCallPrompt(callerJid, callerName);
   const strictPhoneGuidelines = `
-\n⚠️ تعليمات صوتية صارمة لا تقبل الجدال:
+⚠️ تعليمات صوتية صارمة لا تقبل الجدال:
 - أنت تتحدث هاتفياً في مكالمة مباشرة وحية الآن.
-- رد بجملة واحدة أو جملتين بالكتير جداً بمصري أصيل كأنك في التليفون.
+- رد بجملة واحدة أو جملتين بالكتير جداً بمصري أصيل ورايق ورقيق كأنك في التليفون.
 - ممنوع أي إيموجي وممنوع أي ماركداون وممنوع الروابط لأن كلامك سيتحول لصوت مباشر في أذن المتصل فوراً.
-- خلي ردك سريع وخفيف الدم ومباشر.`;
+- خلي ردك سريع وهادئ وخفيف الدم ومباشر.`;
 
+  // 1. المحرك الأول: نموذج Google Gemini Flash فائق السرعة عبر VEX (~1.7s)
+  try {
+    const combinedPrompt = `${basePrompt}\n${strictPhoneGuidelines}\n\nالمتصل بيقول في التليفون: "${lastUserMsg}"\nرد أسترو المصري:`;
+    const geminiRes = await api.vexGemini(combinedPrompt);
+    const cleaned = cleanVoiceText(geminiRes);
+    if (cleaned && cleaned.length > 2) {
+      console.log(`⚡ [VOIP:GEMINI] تم توليد الرد عبر Google Gemini Flash السريع`);
+      return cleaned;
+    }
+  } catch (err) {
+    console.warn(`[VOIP:GEMINI] تعذر VEX Gemini:`, err.message);
+  }
+
+  // 2. المحرك الثاني: Google Gemini عبر Engez مع الحفاظ على SessionId متعدد الجولات
+  try {
+    const geminiRes = await api.gemini(lastUserMsg, {
+      instruction: `${basePrompt}\n${strictPhoneGuidelines}`,
+      sessionId: session?.geminiSessionId || null,
+    });
+    if (session && geminiRes?.sessionId) {
+      session.geminiSessionId = geminiRes.sessionId;
+    }
+    const cleaned = cleanVoiceText(geminiRes?.reply);
+    if (cleaned && cleaned.length > 2) {
+      console.log(`⚡ [VOIP:GEMINI] تم توليد الرد عبر Engez Google Gemini`);
+      return cleaned;
+    }
+  } catch (err) {
+    console.warn(`[VOIP:GEMINI] تعذر Engez Gemini:`, err.message);
+  }
+
+  // 3. المحرك الاحتياطي الفوري: Groq Key Pool (Qwen 3.8-27B) في حال بطء الشبكة
+  const keys = config.groqApiKeys || [];
   const messages = [
     { role: 'system', content: basePrompt + strictPhoneGuidelines },
     ...history.slice(-6),
@@ -176,7 +209,7 @@ export async function generateReply(history, callerJid = '', callerName = '') {
         if (cleaned) return cleaned;
       }
     } catch (err) {
-      console.warn(`[VOIP:LLM] خطأ في مفتاح Groq ${attempt + 1}:`, err.message);
+      console.warn(`[VOIP:LLM-FALLBACK] خطأ في مفتاح Groq ${attempt + 1}:`, err.message);
     }
   }
 
@@ -185,25 +218,35 @@ export async function generateReply(history, callerJid = '', callerName = '') {
 
 /**
  * تحويل النص إلى صوت وحفظه في ملف مؤقت لتشغيله في المكالمة
- * المحرك الأساسي: VEX TTS (صوت ميسي - مصري طبيعي)
- * المحرك الاحتياطي الفوري: Google Translate TTS (استجابة في 300ms)
+ * المحرك الأساسي: ElevenLabs Antoni (صوت رجل رقيق وناعم وطبيعي 100%)
+ * مع دعم فك التشفير المباشر لـ base64 لتسريع الاستجابة بأقل من ثانية واحدة
+ * المحرك الاحتياطي: Google Translate TTS الفوري
  */
-export async function synthesizeSpeech(text, callId) {
+export async function synthesizeSpeech(text, callId, voice = 'antoni') {
   const clean = cleanVoiceText(text);
   if (!clean) return null;
 
   const tempBase = join(tmpdir(), `call_${callId.slice(0, 8)}_${Date.now()}`);
 
-  // 1. المحرك الأساسي: VEX TTS (صوت طبيعي فائق الجودة)
+  // 1. المحرك الأساسي: ElevenLabs Antoni (صوت رجل رقيق وناعم وطبيعي)
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3500);
-    const vexUrl = `https://johan-vex-apis.vercel.app/api/ai/tts?text=${encodeURIComponent(clean.slice(0, 300))}&voice=messi&format=json`;
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const vexUrl = `https://johan-vex-apis.vercel.app/api/ai/tts?text=${encodeURIComponent(clean.slice(0, 300))}&voice=${encodeURIComponent(voice)}&format=json`;
     const res = await fetch(vexUrl, { signal: controller.signal });
     clearTimeout(timer);
 
     if (res.ok) {
       const data = await res.json();
+      // أ) لو راجع Base64 فوري (بيوفر ~800ms بدون تنزيل ملف من سيرفر خارجي)
+      if (data.audio_base64) {
+        const buf = Buffer.from(data.audio_base64, 'base64');
+        const outPath = `${tempBase}.mp3`;
+        writeFileSync(outPath, buf);
+        console.log(`🎙️ [VOIP:TTS] تم توليد الصوت بصوت الرجل الرقيق (${voice}) بنجاح عبر Base64`);
+        return outPath;
+      }
+      // ب) لو راجع كـ URL
       const audioUrl = data.audio_url || data.url || data.data?.audio_url;
       if (audioUrl) {
         const dlRes = await fetch(audioUrl);
@@ -211,15 +254,36 @@ export async function synthesizeSpeech(text, callId) {
           const buf = Buffer.from(await dlRes.arrayBuffer());
           const outPath = `${tempBase}.wav`;
           writeFileSync(outPath, buf);
+          console.log(`🎙️ [VOIP:TTS] تم تنزيل الصوت بصوت الرجل الرقيق (${voice}) بنجاح`);
           return outPath;
         }
       }
     }
   } catch (err) {
-    console.warn(`[VOIP:TTS] تعذر VEX TTS (${err.message})، جاري التبديل للمحرك الاحتياطي الفوري...`);
+    console.warn(`[VOIP:TTS] تعذر صوت ${voice} (${err.message})، جاري التبديل للمحرك الاحتياطي الفوري...`);
   }
 
-  // 2. المحرك الاحتياطي فائق السرعة: Google Translate TTS
+  // 2. المحرك الاحتياطي الأول: تجربة صوت Adam (صوت رجل هادئ ودافئ)
+  if (voice !== 'adam') {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      const vexUrl = `https://johan-vex-apis.vercel.app/api/ai/tts?text=${encodeURIComponent(clean.slice(0, 300))}&voice=adam&format=json`;
+      const res = await fetch(vexUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audio_base64) {
+          const buf = Buffer.from(data.audio_base64, 'base64');
+          const outPath = `${tempBase}.mp3`;
+          writeFileSync(outPath, buf);
+          return outPath;
+        }
+      }
+    } catch {}
+  }
+
+  // 3. المحرك الاحتياطي فائق السرعة: Google Translate TTS
   try {
     const gUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ar&client=tw-ob&q=${encodeURIComponent(clean.slice(0, 200))}`;
     const res = await fetch(gUrl);
@@ -306,11 +370,11 @@ async function processCallerSpeech(client, session) {
   console.log(`🗣️ [VOIP] المتصل (${session.callId}): "${transcript}"`);
   session.history.push({ role: 'user', content: transcript });
 
-  const replyText = await generateReply(session.history, session.peerJid, session.callerPn);
-  console.log(`🤖 [VOIP] أسترو سيرد صوتياً: "${replyText}"`);
+  const replyText = await generateReply(session.history, session.peerJid, session.callerPn, session);
+  console.log(`🤖 [VOIP] أسترو سيرد صوتياً (Google Gemini): "${replyText}"`);
   session.history.push({ role: 'assistant', content: replyText });
 
-  const audioFile = await synthesizeSpeech(replyText, session.callId);
+  const audioFile = await synthesizeSpeech(replyText, session.callId, 'antoni');
   if (audioFile && !session.ended) {
     session.tempFiles.push(audioFile);
     session.turns++;
